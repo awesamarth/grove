@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Grove
 
-## Getting Started
+Grove is a social layer on top of MOSS wallets.
 
-First, run the development server:
+Current Vercel deployment:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```text
+https://grove-samarth-saxenas-projects.vercel.app
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Structure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `next-app/` — Next.js web app, MOSS integration, Convex functions.
+- `extension/` — planned Chrome extension surface for X.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Web App
 
-## Learn More
+```bash
+cd next-app
+bun install
+bun run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+The app runs with HTTPS by default because MOSS/passkey flows need a secure browser context:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```text
+https://localhost:3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Convex
 
-## Deploy on Vercel
+The Convex dev deployment is configured in `next-app/.env.local`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Useful commands:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+cd next-app
+convex dev
+convex dev --once
+convex dev --once --run seed:initialise
+```
+
+## Environment
+
+Copy `next-app/.env.example` to `next-app/.env.local` when setting up a new machine.
+
+```env
+NEXT_PUBLIC_MOSS_NETWORK=testnet
+NEXT_PUBLIC_CONVEX_URL=
+NEXT_PUBLIC_CONVEX_SITE_URL=
+CONVEX_DEPLOYMENT=
+```
+
+Development defaults to MOSS testnet. Mainnet should be an env change, not a code fork.
+
+## Checks
+
+```bash
+cd next-app
+bun run lint
+bun run typecheck
+bun run build
+bun run smoke
+```
+
+Smoke test a deployed URL:
+
+```bash
+SMOKE_BASE_URL=https://grove-samarth-saxenas-projects.vercel.app bun run smoke
+```
+
+## Public Extension API
+
+Resolve a verified public X handle into Grove profile data:
+
+```text
+GET /api/public/x/:handle
+```
+
+Example:
+
+```bash
+curl https://grove-samarth-saxenas-projects.vercel.app/api/public/x/miramakes
+```
+
+The response includes profile, reputation, recent public activity, and a `tipUrl`.
+Unlinked, private, or unverified accounts return `404` with `{ "linked": false }`.
