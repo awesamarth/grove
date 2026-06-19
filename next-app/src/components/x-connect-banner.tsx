@@ -1,20 +1,20 @@
 "use client";
 
-import { useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useGroveSession } from "../lib/use-grove-session";
 import { useXConnect } from "./x-connect-modal";
 
 export function XConnectBanner() {
-  const { address } = useStatus();
+  const groveSession = useGroveSession();
   const { openXConnect } = useXConnect();
   const dashboard = useQuery(
     api.dashboard.getDashboard,
-    address ? { viewerWallet: address } : "skip",
+    groveSession.walletAddress ? { viewerWallet: groveSession.walletAddress } : "skip",
   );
   const viewer = dashboard?.viewer;
 
-  if (!address || !viewer?.onboardingComplete || viewer.xVerified) {
+  if (!groveSession.walletAddress || !viewer?.onboardingComplete || viewer.xVerified) {
     return null;
   }
 
@@ -28,9 +28,9 @@ export function XConnectBanner() {
         <button
           type="button"
           onClick={openXConnect}
-          className="flex h-8 items-center justify-center rounded-md border border-primary bg-background px-3 text-sm font-medium leading-none text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white"
+          className="grid h-8 place-items-center rounded-md border border-primary bg-background px-3 text-sm font-medium leading-none text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white"
         >
-          <span className="translate-y-px">Connect X</span>
+          Connect X
         </button>
       </div>
     </section>

@@ -1,12 +1,15 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
-import { useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useGroveSession } from "../lib/use-grove-session";
 
 type XConnectContextValue = {
   openXConnect: () => void;
+  connectX: () => Promise<void>;
+  pending: boolean;
+  error?: string;
 };
 
 const XConnectContext = createContext<XConnectContextValue | null>(null);
@@ -20,7 +23,7 @@ export function useXConnect() {
 }
 
 export function XConnectProvider({ children }: { children: ReactNode }) {
-  const { address } = useStatus();
+  const groveSession = useGroveSession();
   const mockLinkX = useMutation(api.dashboard.mockLinkX);
   const [open, setOpen] = useState(false);
   const [handle, setHandle] = useState("");
@@ -48,8 +51,8 @@ export function XConnectProvider({ children }: { children: ReactNode }) {
   }
 
   async function connectX() {
-    if (!address) {
-      setError("Connect MOSS before linking X.");
+    if (!groveSession.walletAddress) {
+      setError("Sign in with MOSS before linking X.");
       return;
     }
 
@@ -60,7 +63,6 @@ export function XConnectProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/auth/x/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
       });
       const body = (await response.json()) as { url?: string; error?: string };
 
@@ -77,13 +79,12 @@ export function XConnectProvider({ children }: { children: ReactNode }) {
   }
 
   async function submitMock() {
-    if (!address) return;
+    if (!groveSession.walletAddress) return;
     setPending(true);
     setError(undefined);
 
     try {
       await mockLinkX({
-        devWalletAddress: address,
         xHandle: handle,
       });
       setHandle("");
@@ -96,7 +97,7 @@ export function XConnectProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <XConnectContext.Provider value={{ openXConnect: () => setOpen(true) }}>
+    <XConnectContext.Provider value={{ openXConnect: () => setOpen(true), connectX, pending, error }}>
       {children}
       {open ? (
         <div
@@ -132,7 +133,7 @@ export function XConnectProvider({ children }: { children: ReactNode }) {
                 </button>
                 <button
                   type="button"
-                  disabled={pending || !address}
+                  disabled={pending || !groveSession.walletAddress}
                   onClick={connectX}
                   className="flex h-10 items-center justify-center rounded-md bg-dark px-4 text-sm font-medium leading-none text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                 >

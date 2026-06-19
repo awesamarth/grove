@@ -11,9 +11,11 @@ export default defineSchema({
     displayName: v.string(),
     xHandle: v.optional(v.string()),
     xUserId: v.optional(v.string()),
+    xProfileImageUrl: v.optional(v.string()),
     xVerified: v.boolean(),
     bio: v.string(),
     avatar: v.string(),
+    avatarStorageId: v.optional(v.id("_storage")),
     onboardingComplete: v.optional(v.boolean()),
     privacy,
     activitySharing: privacy,
@@ -96,4 +98,19 @@ export default defineSchema({
   })
     .index("by_fromWallet_and_createdAt", ["fromWallet", "createdAt"])
     .index("by_toWallet_and_createdAt", ["toWallet", "createdAt"]),
+
+  notifications: defineTable({
+    walletAddress: v.string(),
+    kind: v.union(
+      v.literal("tip_received"),
+      v.literal("reputation_vote"),
+      v.literal("followed"),
+    ),
+    actorWallet: v.optional(v.string()),
+    body: v.string(),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_walletAddress_and_createdAt", ["walletAddress", "createdAt"])
+    .index("by_walletAddress_and_read", ["walletAddress", "read"]),
 });

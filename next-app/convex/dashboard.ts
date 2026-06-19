@@ -44,6 +44,10 @@ function normalizeXHandle(xHandle: string) {
   return cleanHandle;
 }
 
+function testToolsEnabled() {
+  return process.env.GROVE_ENABLE_TEST_TOOLS === "true";
+}
+
 async function getProfileByWallet(ctx: QueryCtx | MutationCtx, walletAddress: string) {
   return await ctx.db
     .query("profiles")
@@ -51,11 +55,17 @@ async function getProfileByWallet(ctx: QueryCtx | MutationCtx, walletAddress: st
     .unique();
 }
 
+async function authenticatedWallet(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Sign in with MOSS first.");
+  return normalizeWallet(identity.subject);
+}
+
 async function linkXHandle(
   ctx: MutationCtx,
-  args: { devWalletAddress: string; xHandle: string; xUserId?: string },
+  args: { walletAddress: string; xHandle: string; xUserId?: string; xProfileImageUrl?: string },
 ) {
-  const profile = await getProfileByWallet(ctx, args.devWalletAddress);
+  const profile = await getProfileByWallet(ctx, args.walletAddress);
   if (!profile) throw new Error("Create a Grove profile first.");
 
   const cleanHandle = normalizeXHandle(args.xHandle);
@@ -83,12 +93,21 @@ async function linkXHandle(
     handleKind: "x",
     xHandle: cleanHandle,
     xUserId: args.xUserId,
+    xProfileImageUrl: args.xProfileImageUrl,
     xVerified: true,
     onboardingComplete: true,
     updatedAt: Date.now(),
   });
 
   return cleanHandle;
+}
+
+async function avatarUrl(ctx: QueryCtx, profile: Doc<"profiles">) {
+  if (profile.avatarStorageId) {
+    const storedUrl = await ctx.storage.getUrl(profile.avatarStorageId);
+    if (storedUrl) return storedUrl;
+  }
+  return profile.xProfileImageUrl ?? null;
 }
 
 function timeAgo(happenedAt: number) {
@@ -110,7 +129,8 @@ export const getDashboard = query({
     viewerWallet: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const viewerWallet = args.viewerWallet ? normalizeWallet(args.viewerWallet) : undefined;
+    const identity = await ctx.auth.getUserIdentity();
+    const viewerWallet = identity ? normalizeWallet(identity.subject) : undefined;
     const viewer = viewerWallet ? await getProfileByWallet(ctx, viewerWallet) : null;
 
     const publicProfiles = await ctx.db
@@ -140,51 +160,56 @@ export const getDashboard = query({
       : [];
     const followedWallets = new Set(follows.map((follow) => follow.targetWallet));
 
-    const feed = activities
+    const visibleActivities = activities
       .filter((activity) => isVisibleToViewer(activity, actors.get(activity.actorWallet) ?? null, viewerWallet))
-      .slice(0, 8)
-      .map((activity) => {
-        const actor = actors.get(activity.actorWallet);
-        return {
-          ...activity,
-          time: timeAgo(activity.happenedAt),
-          actor: actor
-            ? {
-                walletAddress: actor.walletAddress,
-                username: actor.username,
-                displayName: actor.displayName,
-                xHandle: actor.xHandle ?? null,
-                xVerified: actor.xVerified,
-                avatar: actor.avatar,
-                reputation: actor.reputation,
-              }
-            : null,
-        };
+      .slice(0, 8);
+
+    const feed = [];
+    for (const activity of visibleActivities) {
+      const actor = actors.get(activity.actorWallet);
+      feed.push({
+        ...activity,
+        time: timeAgo(activity.happenedAt),
+        actor: actor
+          ? {
+              walletAddress: actor.walletAddress,
+              username: actor.username,
+              displayName: actor.displayName,
+              xHandle: actor.xHandle ?? null,
+              xVerified: actor.xVerified,
+              avatar: actor.avatar,
+              avatarUrl: await avatarUrl(ctx, actor),
+              reputation: actor.reputation,
+            }
+          : null,
       });
+    }
 
     return {
       viewer: viewer
         ? {
             ...viewer,
+            avatarUrl: await avatarUrl(ctx, viewer),
             onboardingComplete: profileIsComplete(viewer),
             handleKind: viewer.handleKind ?? (viewer.xVerified ? "x" : "generated"),
           }
         : null,
       feed,
-      people: publicProfiles
+      people: await Promise.all(publicProfiles
         .filter((profile) => profile.walletAddress !== viewerWallet)
         .slice(0, 5)
-        .map((profile) => ({
+        .map(async (profile) => ({
           ...profile,
+          avatarUrl: await avatarUrl(ctx, profile),
           onboardingComplete: profileIsComplete(profile),
           handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
           isFollowed: followedWallets.has(profile.walletAddress),
           mutuals: Math.max(2, Math.round(profile.reputation / 7)),
-        })),
+        }))),
       stats: {
         people: publicProfiles.length,
         activities: activities.length,
-        apps: 34,
+        apps: 9,
       },
     };
   },
@@ -232,15 +257,16 @@ export const searchProfiles = query({
       }
     }
 
-    return Array.from(results.values()).map((profile) => ({
+    return await Promise.all(Array.from(results.values()).map(async (profile) => ({
       walletAddress: profile.walletAddress,
       username: profile.username,
       handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
       displayName: profile.displayName,
       xHandle: profile.xHandle ?? null,
       avatar: profile.avatar,
+      avatarUrl: await avatarUrl(ctx, profile),
       reputation: profile.reputation,
-    }));
+    })));
   },
 });
 
@@ -279,6 +305,7 @@ export const getPublicProfileByXHandle = query({
       displayName: profile.displayName,
       xHandle: profile.xHandle ?? null,
       avatar: profile.avatar,
+      avatarUrl: await avatarUrl(ctx, profile),
       reputation: profile.reputation,
       upvotes: profile.upvotes,
       downvotes: profile.downvotes,
@@ -302,7 +329,8 @@ export const getProfileByUsername = query({
   },
   handler: async (ctx, args) => {
     const cleanUsername = args.username.replace(/^@/, "").trim().toLowerCase();
-    const viewerWallet = args.viewerWallet ? normalizeWallet(args.viewerWallet) : undefined;
+    const identity = await ctx.auth.getUserIdentity();
+    const viewerWallet = identity ? normalizeWallet(identity.subject) : undefined;
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_username", (q) => q.eq("username", cleanUsername))
@@ -311,14 +339,6 @@ export const getProfileByUsername = query({
     if (!profile || profile.privacy === "private") {
       return null;
     }
-
-    const recentActivities = await ctx.db
-      .query("activities")
-      .withIndex("by_actorWallet_and_happenedAt", (q) =>
-        q.eq("actorWallet", profile.walletAddress),
-      )
-      .order("desc")
-      .take(4);
 
     const follow = viewerWallet
       ? await ctx.db
@@ -334,6 +354,14 @@ export const getProfileByUsername = query({
       .withIndex("by_targetWallet", (q) => q.eq("targetWallet", profile.walletAddress))
       .take(24);
 
+    const recentActivities = await ctx.db
+      .query("activities")
+      .withIndex("by_actorWallet_and_happenedAt", (q) =>
+        q.eq("actorWallet", profile.walletAddress),
+      )
+      .order("desc")
+      .take(4);
+
     const followerProfiles = [];
     for (const follower of followers.slice(0, 5)) {
       const followerProfile = await getProfileByWallet(ctx, follower.followerWallet);
@@ -343,6 +371,7 @@ export const getProfileByUsername = query({
           username: followerProfile.username,
           displayName: followerProfile.displayName,
           avatar: followerProfile.avatar,
+          avatarUrl: await avatarUrl(ctx, followerProfile),
         });
       }
     }
@@ -350,6 +379,7 @@ export const getProfileByUsername = query({
     return {
       profile: {
         ...profile,
+        avatarUrl: await avatarUrl(ctx, profile),
         onboardingComplete: profileIsComplete(profile),
         handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
       },
@@ -363,13 +393,50 @@ export const getProfileByUsername = query({
   },
 });
 
+export const getProfileActivities = query({
+  args: {
+    username: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cleanUsername = args.username.replace(/^@/, "").trim().toLowerCase();
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_username", (q) => q.eq("username", cleanUsername))
+      .unique();
+
+    if (!profile || profile.privacy === "private" || profile.activitySharing !== "public") {
+      return { profile: null, activities: [] };
+    }
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_actorWallet_and_happenedAt", (q) =>
+        q.eq("actorWallet", profile.walletAddress),
+      )
+      .order("desc")
+      .take(30);
+
+    const visibleActivities = activities.filter((a) => a.visibility === "public");
+
+    return {
+      profile: {
+        walletAddress: profile.walletAddress,
+        username: profile.username,
+        displayName: profile.displayName,
+        avatar: profile.avatar,
+        avatarUrl: await avatarUrl(ctx, profile),
+      },
+      activities: visibleActivities,
+    };
+  },
+});
+
 export const upsertDevProfile = mutation({
   args: {
-    walletAddress: v.string(),
     displayName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const walletAddress = normalizeWallet(args.walletAddress);
+    const walletAddress = await authenticatedWallet(ctx);
     const existing = await getProfileByWallet(ctx, walletAddress);
     const now = Date.now();
 
@@ -407,12 +474,13 @@ export const upsertDevProfile = mutation({
 
 export const completeOnboarding = mutation({
   args: {
-    walletAddress: v.string(),
     displayName: v.string(),
+    bio: v.optional(v.string()),
     avatar: v.optional(v.string()),
+    avatarStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
-    const walletAddress = normalizeWallet(args.walletAddress);
+    const walletAddress = await authenticatedWallet(ctx);
     const displayName = args.displayName.trim().replace(/\s+/g, " ");
 
     if (displayName.length < 2) {
@@ -421,13 +489,17 @@ export const completeOnboarding = mutation({
 
     const existing = await getProfileByWallet(ctx, walletAddress);
     const now = Date.now();
+    const bio = args.bio?.trim().replace(/\s+/g, " ") ?? existing?.bio ?? "New Grove profile.";
 
     if (existing) {
       await ctx.db.patch(existing._id, {
         username: existing.xVerified ? existing.username : displayUsername(walletAddress),
         handleKind: existing.xVerified ? "x" : "generated",
         displayName,
+        bio,
         avatar: args.avatar ?? existing.avatar,
+        avatarStorageId: args.avatarStorageId ?? existing.avatarStorageId,
+        xProfileImageUrl: args.avatarStorageId ? undefined : existing.xProfileImageUrl,
         onboardingComplete: true,
         updatedAt: now,
       });
@@ -440,8 +512,9 @@ export const completeOnboarding = mutation({
       handleKind: "generated",
       displayName,
       xVerified: false,
-      bio: "New Grove profile.",
+      bio,
       avatar: args.avatar ?? "niko",
+      avatarStorageId: args.avatarStorageId,
       onboardingComplete: true,
       privacy: "public",
       activitySharing: "public",
@@ -454,14 +527,51 @@ export const completeOnboarding = mutation({
   },
 });
 
+export const generateProfileAvatarUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await authenticatedWallet(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const updateProfile = mutation({
+  args: {
+    displayName: v.string(),
+    bio: v.optional(v.string()),
+    avatar: v.optional(v.string()),
+    avatarStorageId: v.optional(v.union(v.id("_storage"), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const walletAddress = await authenticatedWallet(ctx);
+    const profile = await getProfileByWallet(ctx, walletAddress);
+    if (!profile) throw new Error("Create a Grove profile first.");
+
+    const displayName = args.displayName.trim().replace(/\s+/g, " ");
+    if (displayName.length < 2) {
+      throw new Error("Display name must be at least 2 characters.");
+    }
+    const bio = args.bio?.trim().replace(/\s+/g, " ") ?? profile.bio;
+
+    await ctx.db.patch(profile._id, {
+      displayName,
+      bio,
+      avatar: args.avatar ?? profile.avatar,
+      avatarStorageId: args.avatarStorageId === null ? undefined : (args.avatarStorageId ?? profile.avatarStorageId),
+      xProfileImageUrl: args.avatarStorageId === null ? undefined : profile.xProfileImageUrl,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const updatePrivacy = mutation({
   args: {
-    devWalletAddress: v.string(),
     privacy,
     activitySharing: privacy,
   },
   handler: async (ctx, args) => {
-    const profile = await getProfileByWallet(ctx, args.devWalletAddress);
+    const walletAddress = await authenticatedWallet(ctx);
+    const profile = await getProfileByWallet(ctx, walletAddress);
     if (!profile) throw new Error("Create a Grove profile first.");
 
     await ctx.db.patch(profile._id, {
@@ -474,35 +584,38 @@ export const updatePrivacy = mutation({
 
 export const mockLinkX = mutation({
   args: {
-    devWalletAddress: v.string(),
     xHandle: v.string(),
   },
   handler: async (ctx, args) => {
-    await linkXHandle(ctx, args);
+    if (!testToolsEnabled()) {
+      throw new Error("Mock X linking is disabled in production.");
+    }
+    const walletAddress = await authenticatedWallet(ctx);
+    await linkXHandle(ctx, { walletAddress, xHandle: args.xHandle });
   },
 });
 
-export const linkVerifiedXByWallet = mutation({
+export const linkVerifiedX = mutation({
   args: {
-    walletAddress: v.string(),
     xHandle: v.string(),
     xUserId: v.string(),
+    xProfileImageUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const walletAddress = await authenticatedWallet(ctx);
     return await linkXHandle(ctx, {
-      devWalletAddress: args.walletAddress,
+      walletAddress,
       xHandle: args.xHandle,
       xUserId: args.xUserId,
+      xProfileImageUrl: args.xProfileImageUrl,
     });
   },
 });
 
 export const clearMockXForWallet = mutation({
-  args: {
-    walletAddress: v.string(),
-  },
+  args: {},
   handler: async (ctx, args) => {
-    const walletAddress = normalizeWallet(args.walletAddress);
+    const walletAddress = await authenticatedWallet(ctx);
     const profile = await getProfileByWallet(ctx, walletAddress);
     if (!profile) throw new Error("Profile not found.");
 
@@ -511,8 +624,74 @@ export const clearMockXForWallet = mutation({
       handleKind: "generated",
       xHandle: undefined,
       xUserId: undefined,
+      xProfileImageUrl: undefined,
       xVerified: false,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const wipeWalletForTesting = mutation({
+  args: {},
+  handler: async (ctx, args) => {
+    if (!testToolsEnabled()) {
+      throw new Error("Test wallet wiping is disabled in production.");
+    }
+    const walletAddress = await authenticatedWallet(ctx);
+    const profile = await getProfileByWallet(ctx, walletAddress);
+
+    const follows = [
+      ...(await ctx.db
+        .query("follows")
+        .withIndex("by_followerWallet", (q) => q.eq("followerWallet", walletAddress))
+        .collect()),
+      ...(await ctx.db
+        .query("follows")
+        .withIndex("by_targetWallet", (q) => q.eq("targetWallet", walletAddress))
+        .collect()),
+    ];
+    for (const follow of follows) {
+      await ctx.db.delete(follow._id);
+    }
+
+    const votes = [
+      ...(await ctx.db
+        .query("reputationVotes")
+        .withIndex("by_targetWallet", (q) => q.eq("targetWallet", walletAddress))
+        .collect()),
+      ...(await ctx.db.query("reputationVotes").collect()).filter(
+        (vote) => vote.voterWallet === walletAddress,
+      ),
+    ];
+    for (const vote of votes) {
+      await ctx.db.delete(vote._id);
+    }
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_actorWallet_and_happenedAt", (q) => q.eq("actorWallet", walletAddress))
+      .collect();
+    for (const activity of activities) {
+      await ctx.db.delete(activity._id);
+    }
+
+    const tipIntents = (await ctx.db.query("tipIntents").collect()).filter(
+      (intent) => intent.fromWallet === walletAddress || intent.toWallet === walletAddress,
+    );
+    for (const tipIntent of tipIntents) {
+      await ctx.db.delete(tipIntent._id);
+    }
+
+    if (profile) {
+      await ctx.db.delete(profile._id);
+    }
+
+    return {
+      deletedProfile: Boolean(profile),
+      deletedFollows: follows.length,
+      deletedVotes: votes.length,
+      deletedActivities: activities.length,
+      deletedTipIntents: tipIntents.length,
+    };
   },
 });

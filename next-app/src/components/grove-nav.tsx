@@ -1,11 +1,13 @@
 "use client";
 
-import { Bell, Check, Copy, LogOut, Search, UserRound } from "lucide-react";
+import { Bell, Check, CheckCheck, Copy, LogOut, Search, UserRound } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { notifyGroveSessionChanged, useGroveSession } from "../lib/use-grove-session";
+import { avatarSrc } from "./profile-avatar";
 import { XConnectBanner } from "./x-connect-banner";
 
 type AuthChallenge = {
@@ -14,41 +16,62 @@ type AuthChallenge = {
   error?: string;
 };
 
-function Avatar({ user, size = "sm" }: { user: string; size?: "sm" | "md" }) {
+function Avatar({
+  user,
+  avatarUrl,
+  size = "sm",
+}: {
+  user: string;
+  avatarUrl?: string | null;
+  size?: "sm" | "md";
+}) {
   const sizes = { sm: "size-8", md: "size-9" };
+  const isBundledAvatar = !avatarUrl;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/avatars/${user}.png`}
+      src={avatarSrc(user, avatarUrl)}
       alt=""
-      className={`${sizes[size]} shrink-0 rounded-md border border-text/15 bg-primary-muted object-cover [image-rendering:pixelated]`}
+      className={`${sizes[size]} shrink-0 rounded-md border border-text/15 bg-primary-muted object-cover ${
+        isBundledAvatar ? "[image-rendering:pixelated]" : ""
+      }`}
     />
   );
 }
 
 export function GroveNav() {
   const { initialised, status, address } = useStatus();
+  const groveSession = useGroveSession();
+  const convexAuth = useConvexAuth();
   const upsertProfile = useMutation(api.dashboard.upsertDevProfile);
   const [authPending, setAuthPending] = useState(false);
   const [authError, setAuthError] = useState<string>();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const notifMenuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sessionWallet = groveSession.walletAddress;
   const dashboard = useQuery(api.dashboard.getDashboard, {
-    viewerWallet: address,
+    viewerWallet: sessionWallet ?? undefined,
   });
   const searchResults = useQuery(
     api.dashboard.searchProfiles,
     searchQuery.trim().length >= 2 ? { query: searchQuery } : "skip",
   );
+  const unreadCount = useQuery(api.notifications.getUnreadCount);
+  const notifications = useQuery(api.notifications.getNotifications);
+  const markAllRead = useMutation(api.notifications.markAllRead);
 
   useEffect(() => {
-    if (!address) return;
-    void upsertProfile({ walletAddress: address });
-  }, [address, upsertProfile]);
+    if (!sessionWallet || !groveSession.token || !convexAuth.isAuthenticated) return;
+    void upsertProfile({}).catch((error) => {
+      console.error("Could not create Grove shell profile.", error);
+    });
+  }, [convexAuth.isAuthenticated, groveSession.token, sessionWallet, upsertProfile]);
 
   useEffect(() => {
     function closeAccountMenu(event: MouseEvent) {
@@ -59,6 +82,17 @@ export function GroveNav() {
 
     document.addEventListener("mousedown", closeAccountMenu);
     return () => document.removeEventListener("mousedown", closeAccountMenu);
+  }, []);
+
+  useEffect(() => {
+    function closeNotifMenu(event: MouseEvent) {
+      if (!notifMenuRef.current?.contains(event.target as Node)) {
+        setNotifOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeNotifMenu);
+    return () => document.removeEventListener("mousedown", closeNotifMenu);
   }, []);
 
   useEffect(() => {
@@ -85,15 +119,16 @@ export function GroveNav() {
   }, []);
 
   async function copyAddress() {
-    if (!address) return;
+    if (!sessionWallet) return;
 
-    await navigator.clipboard.writeText(address);
+    await navigator.clipboard.writeText(sessionWallet);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   }
 
   async function logOut() {
     await mega.disconnect();
+    await groveSession.clear();
     setAccountOpen(false);
   }
 
@@ -152,7 +187,8 @@ export function GroveNav() {
         throw new Error(verificationBody.error ?? "MOSS authentication could not be verified.");
       }
 
-      await upsertProfile({ walletAddress: verificationBody.walletAddress });
+      await groveSession.refresh();
+      notifyGroveSessionChanged();
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "MOSS authentication failed.");
     } finally {
@@ -210,7 +246,7 @@ export function GroveNav() {
                       onClick={() => setSearchOpen(false)}
                       className="flex items-center gap-3 border-b border-border p-3 last:border-b-0 hover:bg-background"
                     >
-                      <Avatar user={result.avatar} />
+                      <Avatar user={result.avatar} avatarUrl={result.avatarUrl} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{result.displayName}</span>
                         <span className="block truncate text-xs text-muted">
@@ -227,29 +263,78 @@ export function GroveNav() {
             ) : null}
           </div>
 
-          <button
-            type="button"
-            aria-label="Notifications"
-            title="Notifications"
-            className="grid size-9 place-items-center rounded-md border border-primary bg-primary text-white transition-colors hover:border-dark hover:bg-dark"
-          >
-            <Bell size={17} className="translate-y-px" strokeWidth={2} />
-          </button>
+          <div ref={notifMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setNotifOpen((open) => !open)}
+              aria-label="Notifications"
+              title="Notifications"
+              className="relative grid size-9 place-items-center rounded-md border border-primary bg-primary text-white transition-colors hover:border-dark hover:bg-dark"
+            >
+              <Bell size={17} className="translate-y-px" strokeWidth={2} />
+              {unreadCount && unreadCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              ) : null}
+            </button>
 
-          {address ? (
+            {notifOpen && sessionWallet ? (
+              <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-lg border border-text/15 bg-panel shadow-[0_12px_30px_rgb(5_32_13/0.12)]">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <p className="text-sm font-semibold">Notifications</p>
+                  {notifications && notifications.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => { void markAllRead(); }}
+                      className="flex items-center gap-1 text-xs text-muted transition-colors hover:text-text"
+                    >
+                      <CheckCheck size={14} />
+                      Clear all
+                    </button>
+                  ) : null}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications === undefined ? (
+                    <div className="p-4 text-sm text-muted">Loading...</div>
+                  ) : notifications.length ? (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif._id}
+                        className={`border-b border-border px-4 py-3 text-sm last:border-b-0 ${
+                          notif.read ? "opacity-60" : ""
+                        }`}
+                      >
+                        <p className={`leading-5 ${notif.read ? "" : "font-medium"}`}>{notif.body}</p>
+                        <p className="mt-1 font-mono text-[11px] text-muted">
+                          {Math.max(1, Math.round((Date.now() - notif.createdAt) / 60_000))}m ago
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-sm text-muted">No notifications yet.</div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {sessionWallet ? (
             <div ref={accountMenuRef} className="relative">
               <button
                 type="button"
                 onClick={() => setAccountOpen((open) => !open)}
-                aria-label="Open account menu"
-                aria-expanded={accountOpen}
-                className="size-9 translate-y-0.5 overflow-hidden rounded-full border-2 border-primary bg-dark p-0.5 transition-opacity hover:opacity-85"
-              >
+	                aria-label="Open account menu"
+	                aria-expanded={accountOpen}
+	                className="size-9 translate-y-0.5 overflow-hidden rounded-full ring-4 ring-panel-dark transition-opacity hover:opacity-85"
+	              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/avatars/${dashboard?.viewer?.avatar ?? "niko"}.png`}
-                  alt="Your profile"
-                  className="size-full scale-[1.08] rounded-full bg-dark object-contain [image-rendering:pixelated]"
+	                  src={avatarSrc(dashboard?.viewer?.avatar ?? "niko", dashboard?.viewer?.avatarUrl)}
+	                  alt="Your profile"
+	                  className={`size-full rounded-full bg-primary-muted object-cover ${
+	                    dashboard?.viewer?.avatarUrl ? "" : "scale-[1.08] [image-rendering:pixelated]"
+	                  }`}
                 />
               </button>
 
@@ -261,7 +346,7 @@ export function GroveNav() {
                     className="flex h-11 w-full items-center px-3 text-left transition-colors hover:bg-background"
                   >
                     <span className="mono-optical-align min-w-0 flex-1 truncate font-mono text-xs">
-                      {address.slice(0, 8)}...{address.slice(-6)}
+                      {sessionWallet.slice(0, 8)}...{sessionWallet.slice(-6)}
                     </span>
                     <span className="relative ml-3 size-3.5 shrink-0 text-muted">
                       <Copy

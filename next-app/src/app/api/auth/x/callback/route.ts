@@ -1,6 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { NextRequest, NextResponse } from "next/server";
 import { api } from "../../../../../../convex/_generated/api";
+import { createGroveJwt } from "@/lib/moss-auth";
 import { readOAuthCookie, xClientId, xClientSecret, xOAuth } from "@/lib/x-oauth";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -16,6 +17,7 @@ type XMeResponse = {
     id?: string;
     username?: string;
     name?: string;
+    profile_image_url?: string;
   };
   errors?: Array<{ detail?: string; message?: string }>;
 };
@@ -105,7 +107,10 @@ export async function GET(request: NextRequest) {
     return response;
   }
 
-  const meResponse = await fetch(xOAuth.meUrl, {
+  const meUrl = new URL(xOAuth.meUrl);
+  meUrl.searchParams.set("user.fields", "profile_image_url");
+
+  const meResponse = await fetch(meUrl, {
     headers: {
       authorization: `Bearer ${tokens.access_token}`,
     },
@@ -114,6 +119,7 @@ export async function GET(request: NextRequest) {
   const me = (await meResponse.json()) as XMeResponse;
   const xUserId = me.data?.id;
   const xHandle = me.data?.username;
+  const xProfileImageUrl = me.data?.profile_image_url?.replace("_normal.", "_400x400.");
 
   if (!meResponse.ok || !xUserId || !xHandle) {
     const message = me.errors?.[0]?.detail ?? me.errors?.[0]?.message ?? "x_profile_lookup_failed";
@@ -123,10 +129,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const username = await convex.mutation(api.dashboard.linkVerifiedXByWallet, {
-      walletAddress: oauthState.walletAddress,
+    convex.setAuth(createGroveJwt(oauthState.walletAddress));
+    const username = await convex.mutation(api.dashboard.linkVerifiedX, {
       xHandle,
       xUserId,
+      xProfileImageUrl,
     });
     const profileUrl = new URL(`/profile/${username}`, request.url);
     profileUrl.searchParams.set("x", "connected");

@@ -4,11 +4,14 @@ import {
   ArrowUpRight,
   Check,
   ChevronRight,
-  Heart,
+  Copy,
   Loader2,
+  Pencil,
+  Share2,
   Sprout,
   ThumbsDown,
   ThumbsUp,
+  Upload,
   UserPlus,
   WalletCards,
 } from "lucide-react";
@@ -16,20 +19,27 @@ import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { GroveNav } from "../../../components/grove-nav";
+import { ProfileAvatar } from "../../../components/profile-avatar";
+import { useGroveSession } from "../../../lib/use-grove-session";
 
-function Avatar({ user, size = "lg" }: { user: string; size?: "sm" | "md" | "lg" }) {
-  const sizes = { sm: "size-8", md: "size-12", lg: "size-20" };
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`/avatars/${user}.png`}
-      alt=""
-      className={`${sizes[size]} rounded-md border border-text/15 bg-primary-muted object-cover [image-rendering:pixelated]`}
-    />
-  );
+const avatarChoices = ["niko", "mira", "raihan", "juno", "kai", "alba"];
+
+function Avatar({
+  user,
+  avatarUrl,
+  label,
+  size = "lg",
+}: {
+  user: string;
+  avatarUrl?: string | null;
+  label?: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  return <ProfileAvatar avatar={user} avatarUrl={avatarUrl} label={label} size={size} />;
 }
 
 function shortWallet(walletAddress: string) {
@@ -40,19 +50,27 @@ export default function ProfilePage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
   const { address, status } = useStatus();
-  const [devWallet] = useState<string | undefined>(() =>
-    typeof window === "undefined"
-      ? undefined
-      : (window.localStorage.getItem("grove:devWallet") ?? undefined),
-  );
-  const viewerWallet = address ?? devWallet;
+  const groveSession = useGroveSession();
+  const viewerWallet = groveSession.walletAddress ?? undefined;
   const profileData = useQuery(api.dashboard.getProfileByUsername, {
     username,
     viewerWallet,
   });
   const setFollow = useMutation(api.social.setFollow);
   const vote = useMutation(api.social.vote);
+  const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
+  const updateProfile = useMutation(api.dashboard.updateProfile);
   const [message, setMessage] = useState<string>();
+  const [addressCopied, setAddressCopied] = useState(false);
+  const [profileCopied, setProfileCopied] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editAvatar, setEditAvatar] = useState("niko");
+  const [editAvatarStorageId, setEditAvatarStorageId] = useState<Id<"_storage"> | null | undefined>();
+  const [editAvatarPreviewUrl, setEditAvatarPreviewUrl] = useState<string | null>();
+  const [editPending, setEditPending] = useState(false);
+  const [uploadPending, setUploadPending] = useState(false);
   const [renderedAt] = useState(() => Date.now());
   const isSelf =
     Boolean(viewerWallet && profileData?.profile) &&
@@ -71,7 +89,6 @@ export default function ProfilePage() {
     }
 
     await setFollow({
-      devWalletAddress: viewerWallet,
       targetWallet: profileData.profile.walletAddress,
       following: !profileData.isFollowed,
     });
@@ -88,7 +105,6 @@ export default function ProfilePage() {
     }
 
     await vote({
-      devWalletAddress: viewerWallet,
       targetWallet: profileData.profile.walletAddress,
       value,
     });
@@ -127,6 +143,109 @@ export default function ProfilePage() {
     }
   }
 
+  async function copyAddress() {
+    if (!profileData?.profile) return;
+
+    await navigator.clipboard.writeText(profileData.profile.walletAddress);
+    setAddressCopied(true);
+    window.setTimeout(() => setAddressCopied(false), 2000);
+  }
+
+  async function copyProfileLink() {
+    if (!profileData?.profile) return;
+
+    const profileUrl =
+      typeof window === "undefined"
+        ? `/profile/${profileData.profile.username}`
+        : `${window.location.origin}/profile/${profileData.profile.username}`;
+
+    await navigator.clipboard.writeText(profileUrl);
+    setProfileCopied(true);
+    setMessage("Profile link copied");
+    window.setTimeout(() => setProfileCopied(false), 2000);
+    window.setTimeout(() => setMessage(undefined), 1800);
+  }
+
+  function openEditProfile() {
+    if (!profileData?.profile) return;
+    setEditName(profileData.profile.displayName);
+    setEditBio(profileData.profile.bio);
+    setEditAvatar(profileData.profile.avatar);
+    setEditAvatarStorageId(undefined);
+    setEditAvatarPreviewUrl(profileData.profile.avatarUrl ?? null);
+    setEditOpen(true);
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMessage("Choose an image file.");
+      window.setTimeout(() => setMessage(undefined), 1800);
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage("Avatar image must be under 5 MB.");
+      window.setTimeout(() => setMessage(undefined), 1800);
+      return;
+    }
+
+    setUploadPending(true);
+    try {
+      const uploadUrl = await generateProfileAvatarUploadUrl();
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "content-type": file.type },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Avatar upload failed.");
+      }
+
+      const { storageId } = (await uploadResponse.json()) as { storageId: Id<"_storage"> };
+      setEditAvatarStorageId(storageId);
+      setEditAvatarPreviewUrl(URL.createObjectURL(file));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Avatar upload failed.");
+      window.setTimeout(() => setMessage(undefined), 2200);
+    } finally {
+      setUploadPending(false);
+    }
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!viewerWallet || editPending || uploadPending || editName.trim().length < 2) return;
+
+    setEditPending(true);
+    try {
+      await updateProfile({
+        displayName: editName,
+        bio: editBio,
+        avatar: editAvatar,
+        avatarStorageId: editAvatarStorageId,
+      });
+      setEditOpen(false);
+      setMessage("Profile updated");
+      window.setTimeout(() => setMessage(undefined), 1800);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update profile.");
+      window.setTimeout(() => setMessage(undefined), 2200);
+    } finally {
+      setEditPending(false);
+    }
+  }
+
+  function saveProfileFromShortcut(event: KeyboardEvent<HTMLFormElement>) {
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    if (editPending || uploadPending || editName.trim().length < 2) return;
+
+    event.preventDefault();
+    event.currentTarget.requestSubmit();
+  }
+
+  const editingProfile = editOpen ? profileData?.profile : null;
+
   return (
     <main className="grove-shell min-h-screen bg-background text-text">
       <GroveNav />
@@ -141,67 +260,118 @@ export default function ProfilePage() {
       ) : profileData.profile ? (
         <section className="mx-auto grid max-w-[1080px] gap-8 px-4 py-8 sm:px-6 md:grid-cols-[minmax(0,1fr)_320px] md:py-12">
           <div>
-            <div className="border-b border-text/15 pb-7">
+            <div>
               <div className="flex flex-wrap items-start gap-5">
-                <Avatar user={profileData.profile.avatar} />
+                <Avatar
+                  user={profileData.profile.avatar}
+                  avatarUrl={profileData.profile.avatarUrl}
+                  label={profileData.profile.displayName}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-[clamp(2.5rem,7vw,5rem)] font-medium leading-none">
                       {profileData.profile.displayName}
-                      {isSelf ? <span className="ml-3 align-middle text-lg text-muted">(You)</span> : null}
+                      {isSelf ? (
+                        <span className="ml-3 inline-flex items-baseline gap-2 align-middle text-xl text-muted">
+                          <span>(You)</span>
+                          <button
+                            type="button"
+                            onClick={openEditProfile}
+                            className="inline-grid size-5 place-items-center text-muted transition-colors hover:text-primary"
+                            aria-label="Edit profile"
+                            title="Edit profile"
+                          >
+                            <span className="relative">
+                              <Pencil size={12} />
+                              <span className="absolute -bottom-1 left-0 h-px w-full bg-current" />
+                            </span>
+                          </button>
+                        </span>
+                      ) : null}
                     </h1>
-                    {profileData.profile.xVerified ? (
-                      <span className="mt-2 text-primary" title="Verified X account">
-                        <Check size={24} strokeWidth={2.4} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-text/10 bg-panel px-2.5 font-mono text-xs text-muted">
+                      {profileData.profile.xVerified ? (
+                        <Check size={14} className="text-primary" strokeWidth={2.4} />
+                      ) : null}
+                      {profileData.profile.xHandle
+                        ? `@${profileData.profile.xHandle}`
+                        : profileData.profile.username}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={copyAddress}
+                      title="Copy wallet address"
+                      className="inline-flex h-8 items-center gap-2 rounded-md border border-text/10 bg-panel px-2.5 font-mono text-xs text-muted transition-colors hover:border-primary hover:text-text"
+                    >
+                      <span className="mono-optical-align">{shortWallet(profileData.profile.walletAddress)}</span>
+                      <span className="relative size-3.5">
+                        <Copy
+                          size={14}
+                          className={`absolute inset-0 transition-all duration-200 ${
+                            addressCopied ? "scale-75 opacity-0" : "scale-100 opacity-100"
+                          }`}
+                        />
+                        <Check
+                          size={14}
+                          className={`absolute inset-0 text-primary transition-all duration-200 ${
+                            addressCopied ? "scale-100 opacity-100" : "scale-75 opacity-0"
+                          }`}
+                        />
                       </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={copyProfileLink}
+                      title="Copy profile link"
+                      className="grid h-8 w-[84px] grid-cols-[14px_42px] items-center justify-center gap-2 rounded-md border border-text/10 bg-panel px-2.5 text-xs text-muted transition-colors hover:border-primary hover:text-text"
+                    >
+                      <Share2 size={14} />
+                      <span className="hidden text-left sm:inline">{profileCopied ? "Copied" : "Share"}</span>
+                    </button>
+                  </div>
+
+                  <p className="mt-4 max-w-2xl text-lg leading-8 text-muted">{profileData.profile.bio}</p>
+
+                  <div className="mt-7 flex flex-wrap gap-2">
+                    {!isSelf ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={toggleFollow}
+                          className={`group flex h-10 w-[118px] items-center justify-center gap-2 rounded-md px-3 text-sm font-medium text-white transition-colors ${
+                            profileData.isFollowed ? "bg-primary hover:bg-danger" : "bg-dark hover:bg-primary"
+                          }`}
+                        >
+                          {profileData.isFollowed ? <Check size={16} /> : <UserPlus size={16} />}
+                          {profileData.isFollowed ? (
+                            <>
+                              <span className="group-hover:hidden">Following</span>
+                              <span className="hidden group-hover:inline">Unfollow</span>
+                            </>
+                          ) : (
+                            "Follow"
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={tipWithMoss}
+                          className="flex h-10 items-center gap-2 rounded-md border border-primary bg-primary-muted px-4 text-sm font-medium text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white"
+                        >
+                          <WalletCards size={16} />
+                          Tip
+                        </button>
+                      </>
                     ) : null}
                   </div>
-                  <p className="mt-3 font-mono text-sm text-muted">
-                    {profileData.profile.xHandle
-                      ? `@${profileData.profile.xHandle}`
-                      : profileData.profile.username}
-                    {" · "}
-                    {shortWallet(profileData.profile.walletAddress)}
-                  </p>
                 </div>
-              </div>
-
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-muted">{profileData.profile.bio}</p>
-
-              <div className="mt-7 flex flex-wrap gap-2">
-                {!isSelf ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={toggleFollow}
-                      className={`group flex h-10 items-center gap-2 rounded-md px-4 text-sm font-medium text-white transition-colors ${
-                        profileData.isFollowed ? "bg-primary hover:bg-danger" : "bg-dark hover:bg-primary"
-                      }`}
-                    >
-                      {profileData.isFollowed ? <Check size={16} /> : <UserPlus size={16} />}
-                      {profileData.isFollowed ? (
-                        <>
-                          <span className="group-hover:hidden">Following</span>
-                          <span className="hidden group-hover:inline">Unfollow</span>
-                        </>
-                      ) : (
-                        "Follow"
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={tipWithMoss}
-                      className="flex h-10 items-center gap-2 rounded-md border border-primary bg-primary-muted px-4 text-sm font-medium text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white"
-                    >
-                      <WalletCards size={16} />
-                      Tip
-                    </button>
-                  </>
-                ) : null}
               </div>
             </div>
 
-            <div className="mt-7 grid grid-cols-3 border-y border-text/20">
+            <div className="mt-5 grid grid-cols-3 border-y border-text/20">
               {[
                 [profileData.profile.reputation, "rep"],
                 [profileData.profile.upvotes, "upvotes"],
@@ -214,15 +384,18 @@ export default function ProfilePage() {
               ))}
             </div>
 
-            <div className="mt-8">
+            <div className="mt-10">
               <div className="mb-4 flex items-end justify-between">
                 <div>
                   <p className="font-mono text-[11px] uppercase text-muted">Public activity</p>
                   <h2 className="mt-1 text-2xl font-medium">Recent activity</h2>
                 </div>
-                <button type="button" className="flex items-center gap-1 text-sm text-primary hover:text-dark">
+                <Link
+                  href={`/profile/${username}/activity`}
+                  className="flex items-center gap-1 text-sm text-primary hover:text-dark"
+                >
                   All activity <ChevronRight size={15} />
-                </button>
+                </Link>
               </div>
 
               <div className="overflow-hidden rounded-lg border border-text/15 bg-panel">
@@ -286,9 +459,14 @@ export default function ProfilePage() {
                 {profileData.followersPreview.length ? (
                   <div className="flex -space-x-2">
                     {profileData.followersPreview.map((follower) => (
-                      <Link key={follower.walletAddress} href={`/profile/${follower.username}`}>
-                        <Avatar user={follower.avatar} size="sm" />
-                      </Link>
+                      <span key={follower.walletAddress}>
+                        <Avatar
+                          user={follower.avatar}
+                          avatarUrl={follower.avatarUrl}
+                          label={follower.displayName}
+                          size="sm"
+                        />
+                      </span>
                     ))}
                   </div>
                 ) : (
@@ -302,7 +480,7 @@ export default function ProfilePage() {
             <section className="border border-dark bg-dark p-5 text-white">
               <div className="flex items-start justify-between">
                 <Sprout className="text-primary-muted" size={22} />
-                <span className="font-mono text-[10px] uppercase text-primary-muted">Grove card</span>
+                <span className="font-mono text-[10px] uppercase text-primary-muted">Grove</span>
               </div>
               <p className="mt-7 text-xl font-medium leading-6">A wallet people can recognize.</p>
               <p className="mt-2 text-sm leading-5 text-white/65">
@@ -328,9 +506,115 @@ export default function ProfilePage() {
       )}
 
       {message ? (
-        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-primary bg-primary-muted px-4 py-3 text-sm text-primary shadow-lg">
-          <Heart size={14} />
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-primary bg-primary-muted px-4 py-3 text-sm text-primary shadow-lg">
           {message}
+        </div>
+      ) : null}
+
+      {editingProfile ? (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-dark/35 px-4 backdrop-blur-sm"
+          onMouseDown={() => setEditOpen(false)}
+        >
+          <form
+            onSubmit={saveProfile}
+            onKeyDown={saveProfileFromShortcut}
+            className="w-full max-w-[460px] overflow-hidden rounded-lg border border-text/20 bg-panel shadow-[0_24px_80px_rgb(5_32_13/0.25)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-border p-5">
+              <p className="font-mono text-[11px] uppercase text-muted">Edit profile</p>
+              <h2 className="mt-1 text-2xl font-medium">Update your Grove profile</h2>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium">Display name</span>
+                <input
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  autoFocus
+                  className="h-11 w-full rounded-md border border-border bg-background px-3 text-base outline-none placeholder:text-muted focus:border-primary"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium">Description</span>
+                <textarea
+                  value={editBio}
+                  onChange={(event) => setEditBio(event.target.value)}
+                  rows={3}
+                  maxLength={180}
+                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 outline-none placeholder:text-muted focus:border-primary"
+                  placeholder="Tell people what you are building, playing, or collecting."
+                />
+              </label>
+
+              <div>
+                <p className="mb-2 text-sm font-medium">Avatar</p>
+                <div className="mb-3 flex items-center gap-3">
+                  <ProfileAvatar
+                    avatar={editAvatar}
+                    avatarUrl={editAvatarPreviewUrl}
+                    label={editName || editingProfile.displayName}
+                    size="lg"
+                  />
+                  <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-text/15 bg-background px-3 text-sm font-medium text-muted transition-colors hover:border-primary hover:text-text">
+                    <Upload size={15} />
+                    {uploadPending ? "Uploading" : "Upload image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadPending}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void uploadAvatar(file);
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-6 gap-2">
+                  {avatarChoices.map((avatar) => (
+                    <button
+                      key={avatar}
+                      type="button"
+                      onClick={() => {
+                        setEditAvatar(avatar);
+                        setEditAvatarStorageId(null);
+                        setEditAvatarPreviewUrl(null);
+                      }}
+                      className={`grid aspect-square place-items-center rounded-md border bg-background transition-colors ${
+                        editAvatar === avatar && !editAvatarPreviewUrl
+                          ? "border-primary bg-primary-muted"
+                          : "border-border hover:border-primary"
+                      }`}
+                      aria-label={`Choose ${avatar} avatar`}
+                    >
+                      <ProfileAvatar avatar={avatar} label={avatar} size="sm" viewable={false} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(false)}
+                  className="h-10 rounded-md border border-border bg-background px-4 text-sm font-medium text-muted transition-colors hover:border-text hover:text-text"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editPending || uploadPending || editName.trim().length < 2}
+                  className="h-10 rounded-md bg-dark px-4 text-sm font-medium text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {editPending ? "Saving" : "Save"}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       ) : null}
     </main>

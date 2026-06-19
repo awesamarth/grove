@@ -1,27 +1,36 @@
 "use client";
 
 import {
+  ArrowUpRight,
+  Check,
   ChevronRight,
   Gamepad2,
   Heart,
   Sparkles,
   Sprout,
   Trophy,
+  Upload,
   UserPlus,
   WalletCards,
+  X,
 } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { GroveNav } from "../components/grove-nav";
+import { ProfileAvatar } from "../components/profile-avatar";
 import { useXConnect } from "../components/x-connect-modal";
+import { notifyGroveSessionChanged, useGroveSession } from "../lib/use-grove-session";
+
+const avatarChoices = ["niko", "mira", "raihan", "juno", "kai", "alba"];
 
 const apps = [
-  { glyph: "N", name: "Noise Arena", players: "1.8k", tint: "#cdefde" },
-  { glyph: "W", name: "Words3", players: "942", tint: "#dfe8ff" },
-  { glyph: "E", name: "Euphoria", players: "614", tint: "#f6dfd6" },
+  { logo: "/eco-apps/euphoria.jpg", name: "Euphoria", desc: "Tap-to-trade crypto, mobile-first.", players: "614", url: "https://euphoria.finance/" },
+  { logo: "/eco-apps/hit_one.jpg", name: "Hit.One", desc: "Arcade finance: high leverage money games.", players: "1.2k", url: "https://hit.one/" },
+  { logo: "/eco-apps/cap.jpg", name: "Cap", desc: "Credit platform with principal protection.", players: "387", url: "https://cap.app/" },
 ];
 
 const activityIcons = {
@@ -40,25 +49,41 @@ type AuthChallenge = {
   error?: string;
 };
 
-function Avatar({ user, size = "md" }: { user: string; size?: "sm" | "md" | "lg" }) {
-  const sizes = { sm: "size-8", md: "size-11", lg: "size-16" };
+function Avatar({
+  user,
+  avatarUrl,
+  label,
+  size = "md",
+  viewable = true,
+}: {
+  user: string;
+  avatarUrl?: string | null;
+  label?: string;
+  size?: "sm" | "md" | "lg";
+  viewable?: boolean;
+}) {
+  const profileAvatarSize = size === "lg" ? "xl" : size;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`/avatars/${user}.png`}
-      alt=""
-      className={`${sizes[size]} shrink-0 rounded-md border border-text/15 bg-primary-muted object-cover [image-rendering:pixelated]`}
+    <ProfileAvatar
+      avatar={user}
+      avatarUrl={avatarUrl}
+      label={label}
+      size={profileAvatarSize}
+      viewable={viewable}
     />
   );
 }
 
 export default function Home() {
   const { initialised, status, address } = useStatus();
-  const { openXConnect } = useXConnect();
+  const groveSession = useGroveSession();
+  const convexAuth = useConvexAuth();
+  const { connectX, pending: xConnectPending, error: xConnectError } = useXConnect();
   const seed = useMutation(api.seed.initialise);
   const upsertProfile = useMutation(api.dashboard.upsertDevProfile);
   const updatePrivacy = useMutation(api.dashboard.updatePrivacy);
   const completeOnboarding = useMutation(api.dashboard.completeOnboarding);
+  const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
   const setFollow = useMutation(api.social.setFollow);
   const vote = useMutation(api.social.vote);
   const [authPending, setAuthPending] = useState(false);
@@ -67,15 +92,16 @@ export default function Home() {
   const [tab, setTab] = useState<"activity" | "people" | "apps">("activity");
   const [optimisticPrivacy, setOptimisticPrivacy] = useState<Privacy>();
   const [onboardingName, setOnboardingName] = useState("");
+  const [onboardingBio, setOnboardingBio] = useState("");
   const [onboardingAvatar, setOnboardingAvatar] = useState("niko");
+  const [onboardingAvatarStorageId, setOnboardingAvatarStorageId] = useState<Id<"_storage"> | undefined>();
+  const [onboardingAvatarPreviewUrl, setOnboardingAvatarPreviewUrl] = useState<string | null>();
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"profile" | "x">("profile");
+  const [onboardingPromptedWallet, setOnboardingPromptedWallet] = useState<string>();
   const [onboardingPending, setOnboardingPending] = useState(false);
-  const [devWallet] = useState<string | undefined>(() =>
-    typeof window === "undefined"
-      ? undefined
-      : (window.localStorage.getItem("grove:devWallet") ?? undefined),
-  );
-  const viewerWallet = address ?? devWallet;
-  const hasProfile = Boolean(viewerWallet);
+  const [onboardingUploadPending, setOnboardingUploadPending] = useState(false);
+  const viewerWallet = groveSession.walletAddress ?? undefined;
   const dashboard = useQuery(api.dashboard.getDashboard, {
     viewerWallet,
   });
@@ -83,15 +109,39 @@ export default function Home() {
   const needsOnboarding = Boolean(
     viewerWallet && dashboard?.viewer && !dashboard.viewer.onboardingComplete,
   );
+  const profileStateReady = !viewerWallet || dashboard !== undefined;
+  const showSetupCta = !viewerWallet || (profileStateReady && needsOnboarding);
 
   useEffect(() => {
     void seed({});
   }, [seed]);
 
   useEffect(() => {
-    if (!address) return;
-    void upsertProfile({ walletAddress: address });
-  }, [address, upsertProfile]);
+    if (!viewerWallet || !groveSession.token || !convexAuth.isAuthenticated) return;
+    void upsertProfile({}).catch((error) => {
+      console.error("Could not create Grove shell profile.", error);
+    });
+  }, [convexAuth.isAuthenticated, groveSession.token, viewerWallet, upsertProfile]);
+
+  useEffect(() => {
+    if (!needsOnboarding || !viewerWallet || onboardingPromptedWallet === viewerWallet) return;
+    setOnboardingStep("profile");
+    setOnboardingOpen(true);
+    setOnboardingPromptedWallet(viewerWallet);
+  }, [needsOnboarding, onboardingPromptedWallet, viewerWallet]);
+
+  useEffect(() => {
+    if (!onboardingOpen) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOnboardingOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onboardingOpen]);
 
   async function signIn() {
     setAuthPending(true);
@@ -149,7 +199,8 @@ export default function Home() {
         throw new Error(verificationBody.error ?? "MOSS authentication could not be verified.");
       }
 
-      await upsertProfile({ walletAddress: verificationBody.walletAddress });
+      await groveSession.refresh();
+      notifyGroveSessionChanged();
       setAuthState("success");
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "MOSS authentication failed.");
@@ -172,7 +223,6 @@ export default function Home() {
     }
 
     await setFollow({
-      devWalletAddress: viewerWallet,
       targetWallet,
       following,
     });
@@ -221,7 +271,6 @@ export default function Home() {
 
     try {
       await updatePrivacy({
-        devWalletAddress: viewerWallet,
         privacy,
         activitySharing: privacy,
       });
@@ -244,7 +293,6 @@ export default function Home() {
     }
 
     await vote({
-      devWalletAddress: viewerWallet,
       targetWallet,
       value,
     });
@@ -253,16 +301,18 @@ export default function Home() {
   async function finishOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!viewerWallet) return;
+    if (!viewerWallet || onboardingPending || onboardingUploadPending || onboardingName.trim().length < 2) return;
     setOnboardingPending(true);
     setAuthError(undefined);
 
     try {
       await completeOnboarding({
-        walletAddress: viewerWallet,
         displayName: onboardingName,
+        bio: onboardingBio,
         avatar: onboardingAvatar,
+        avatarStorageId: onboardingAvatarStorageId,
       });
+      setOnboardingStep("x");
       setAuthState("success");
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Could not finish onboarding.");
@@ -270,6 +320,53 @@ export default function Home() {
     } finally {
       setOnboardingPending(false);
     }
+  }
+
+  async function uploadOnboardingAvatar(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setAuthError("Choose an image file.");
+      setAuthState("error");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setAuthError("Avatar image must be under 5 MB.");
+      setAuthState("error");
+      return;
+    }
+
+    setOnboardingUploadPending(true);
+    setAuthError(undefined);
+
+    try {
+      const uploadUrl = await generateProfileAvatarUploadUrl();
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "content-type": file.type },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Avatar upload failed.");
+      }
+
+      const { storageId } = (await uploadResponse.json()) as { storageId: Id<"_storage"> };
+      setOnboardingAvatarStorageId(storageId);
+      setOnboardingAvatarPreviewUrl(URL.createObjectURL(file));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Avatar upload failed.");
+      setAuthState("error");
+    } finally {
+      setOnboardingUploadPending(false);
+    }
+  }
+
+  function finishOnboardingFromShortcut(event: ReactKeyboardEvent<HTMLFormElement>) {
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    if (onboardingPending || onboardingUploadPending || onboardingName.trim().length < 2) return;
+
+    event.preventDefault();
+    event.currentTarget.requestSubmit();
   }
 
   return (
@@ -286,20 +383,26 @@ export default function Home() {
             <h1 className="max-w-5xl text-[clamp(2.4rem,5.2vw,4rem)] font-medium leading-[0.96]">
               Where all the MegaETH
               <span className="block md:whitespace-nowrap">
-                homies <span className="text-primary">pull up.</span>
+                homies <span className="text-primary">hang out.</span>
               </span>
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-muted sm:text-lg">
               Follow the people, games, apps, and real activity growing across the network.
             </p>
-            {!hasProfile ? (
+            {showSetupCta ? (
               <button
                 type="button"
-                disabled={!initialised || authPending}
-                onClick={signIn}
+                disabled={!viewerWallet && (!initialised || authPending)}
+                onClick={() => {
+                  if (viewerWallet) {
+                    setOnboardingOpen(true);
+                    return;
+                  }
+                  void signIn();
+                }}
                 className="mt-5 h-10 rounded-md border border-primary bg-primary-muted px-4 text-sm font-medium text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white disabled:opacity-50"
               >
-                {authPending ? "Opening MOSS" : "Claim your Grove"}
+                {!viewerWallet && authPending ? "Opening MOSS" : "Set up your profile"}
               </button>
             ) : null}
           </div>
@@ -351,13 +454,11 @@ export default function Home() {
               const Icon = activityIcons[activity.kind];
               const actor = activity.actor;
               return (
-                <article key={activity._id} className="grid grid-cols-[auto_1fr] gap-3 border-b border-border p-4 last:border-b-0 sm:p-5">
+                <article key={activity._id} className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border p-4 last:border-b-0 sm:p-5">
                   {actor ? (
-                    <Link href={`/profile/${actor.username}`} aria-label={`${actor.displayName} profile`}>
-                      <Avatar user={actor.avatar} />
-                    </Link>
+                    <Avatar user={actor.avatar} avatarUrl={actor.avatarUrl} label={actor.displayName} />
                   ) : (
-                    <Avatar user="niko" />
+                    <Avatar user="niko" label="Unknown" />
                   )}
                   <div className="min-w-0">
                     <div className="flex items-start justify-between gap-4">
@@ -423,9 +524,7 @@ export default function Home() {
               {(dashboard?.people ?? []).map((person) => {
                 return (
                   <div key={person.walletAddress} className="flex items-center gap-3 border-b border-text/10 py-3 last:border-b-0">
-                    <Link href={`/profile/${person.username}`} aria-label={`${person.displayName} profile`}>
-                      <Avatar user={person.avatar} size="sm" />
-                    </Link>
+                    <Avatar user={person.avatar} avatarUrl={person.avatarUrl} label={person.displayName} size="sm" />
                     <div className="min-w-0 flex-1">
                       <Link href={`/profile/${person.username}`} className="block truncate text-sm font-semibold hover:text-primary">
                         {person.displayName}
@@ -436,7 +535,7 @@ export default function Home() {
                     </div>
                     <div className="text-right">
                       <p className="font-mono text-xs font-bold text-primary">{person.reputation}</p>
-                      <div className="mt-1 flex items-center gap-2 text-xs">
+                      <div className="mt-1 flex items-center gap-1.5 text-xs">
                         <button
                           type="button"
                           onClick={() => tipWithMoss(person.walletAddress)}
@@ -444,12 +543,13 @@ export default function Home() {
                         >
                           tip
                         </button>
+                        <span className="text-muted/40">|</span>
                         <button
                           type="button"
                           onClick={() => toggleFollow(person.walletAddress, !person.isFollowed)}
                           className="text-muted hover:text-text"
                         >
-                          {person.isFollowed ? "following" : "+ follow"}
+                          {person.isFollowed ? "following" : "follow"}
                         </button>
                       </div>
                     </div>
@@ -464,7 +564,7 @@ export default function Home() {
 
           <section className="overflow-hidden rounded-lg border border-text/15 bg-panel">
             <div className="border-b border-border p-4">
-              <p className="font-mono text-[11px] uppercase text-muted">Your Grove</p>
+              <p className="font-mono text-[11px] uppercase text-muted">Your Profile</p>
               <h2 className="mt-1 text-xl font-medium">
                 {dashboard?.viewer?.onboardingComplete ? dashboard.viewer.displayName : "Profile controls"}
               </h2>
@@ -486,9 +586,13 @@ export default function Home() {
                   {authPending ? "Opening MOSS" : "Sign in with MOSS"}
                 </button>
               ) : needsOnboarding ? (
-                <div className="rounded-md border border-primary bg-primary-muted p-3 text-sm text-primary">
-                  Finish setup to activate your Grove profile.
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setOnboardingOpen(true)}
+                  className="h-10 w-full rounded-md bg-dark px-4 text-sm font-medium text-white transition-colors hover:bg-primary"
+                >
+                  Set up your profile
+                </button>
               ) : (
                 <>
                   <div className="grid grid-cols-3 gap-1 rounded-md border border-border bg-background p-1">
@@ -522,26 +626,36 @@ export default function Home() {
                       {dashboard?.viewer?.xVerified ? "X verified" : "X identity"}
                     </p>
                     {dashboard?.viewer?.xVerified ? (
-                      <div className="rounded-md border border-primary bg-primary-muted px-3 py-2">
-                        <p className="font-mono text-sm text-primary">
-                          @{dashboard.viewer.xHandle ?? dashboard.viewer.username}
-                        </p>
-                        <p className="mt-1 text-xs leading-5 text-primary/80">
-                          This X handle is your Grove username.
+                      <div className="rounded-md border border-text/15 bg-background px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="grid size-5 shrink-0 place-items-center rounded-full border border-primary text-primary">
+                            <Check size={13} strokeWidth={2.4} />
+                          </span>
+                          <p className="min-w-0 flex-1 truncate font-mono text-sm text-text">
+                            @{dashboard.viewer.xHandle ?? dashboard.viewer.username}
+                          </p>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-muted">
+                          Verified through X. This handle is your Grove username.
                         </p>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={openXConnect}
+                        onClick={() => {
+                          setOnboardingStep("x");
+                          setOnboardingOpen(true);
+                        }}
                         className="h-9 w-full rounded-md bg-dark px-3 text-sm font-medium text-white hover:bg-primary"
                       >
                         Connect X
                       </button>
                     )}
-                    <p className="mt-2 text-xs leading-5 text-muted">
-                      Verified users use their X handle as their Grove username.
-                    </p>
+                    {!dashboard?.viewer?.xVerified ? (
+                      <p className="mt-2 text-xs leading-5 text-muted">
+                        Verified users use their X handle as their Grove username.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="grid grid-cols-3 border-y border-text/15 py-3 text-center">
@@ -576,16 +690,14 @@ export default function Home() {
             </div>
             <div className="overflow-hidden rounded-lg border border-text/15 bg-panel">
               {apps.map((app, index) => (
-                <button key={app.name} type="button" className="flex w-full items-center gap-3 border-b border-border p-3 text-left last:border-b-0 hover:bg-background">
-                  <span className="grid size-10 place-items-center rounded-md border border-text/15 font-mono text-sm font-bold" style={{ backgroundColor: app.tint }}>
-                    {app.glyph}
-                  </span>
+                <a key={app.name} href={app.url} target="_blank" rel="noopener noreferrer" className="group flex w-full items-center gap-3 border-b border-border p-3 text-left last:border-b-0 hover:bg-background">
+                  <img src={app.logo} alt={app.name} className="size-10 rounded-md border border-text/15 object-cover" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{app.name}</span>
-                    <span className="mt-0.5 block text-xs text-muted">{app.players} active this week</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted">{app.desc}</span>
                   </span>
-                  <span className="font-mono text-[10px] text-muted">0{index + 1}</span>
-                </button>
+                  <ArrowUpRight size={14} className="shrink-0 text-muted transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                </a>
               ))}
             </div>
           </section>
@@ -601,20 +713,42 @@ export default function Home() {
         </aside>
       </div>
 
-      {needsOnboarding ? (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-dark/35 px-4 backdrop-blur-sm">
+      {onboardingOpen ? (
+        <div
+          className="fixed inset-0 z-[70] grid place-items-center bg-dark/35 px-4 backdrop-blur-sm"
+          onMouseDown={() => setOnboardingOpen(false)}
+        >
           <form
-            onSubmit={finishOnboarding}
+            onSubmit={onboardingStep === "profile" ? finishOnboarding : (event) => event.preventDefault()}
+            onKeyDown={onboardingStep === "profile" ? finishOnboardingFromShortcut : undefined}
             className="w-full max-w-[460px] overflow-hidden rounded-lg border border-text/20 bg-panel shadow-[0_24px_80px_rgb(5_32_13/0.25)]"
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="border-b border-border p-5">
-              <p className="font-mono text-[11px] uppercase text-muted">Set up Grove</p>
-              <h2 className="mt-1 text-2xl font-medium">Choose your display name</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                Your handle starts as a generated Grove tag. Connect X later to use your verified X handle.
-              </p>
+            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+              <div>
+                <p className="font-mono text-[11px] uppercase text-muted">
+                  {onboardingStep === "profile" ? "Set up Grove" : "Connect X"}
+                </p>
+                <h2 className="mt-1 text-2xl font-medium">
+                  {onboardingStep === "profile" ? "Set up your profile" : "Claim your X handle"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  {onboardingStep === "profile"
+                    ? "Add a display name, optional bio, and avatar. Connect X later to use your verified X handle."
+                    : "Verify X once to use your X handle as your Grove username."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOnboardingOpen(false)}
+                className="grid size-8 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-background hover:text-text"
+                aria-label="Close onboarding"
+              >
+                <X size={18} />
+              </button>
             </div>
 
+            {onboardingStep === "profile" ? (
             <div className="space-y-5 p-5">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium">Display name</span>
@@ -627,22 +761,61 @@ export default function Home() {
                 />
               </label>
 
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium">Bio <span className="text-muted">(optional)</span></span>
+                <textarea
+                  value={onboardingBio}
+                  onChange={(event) => setOnboardingBio(event.target.value)}
+                  rows={3}
+                  maxLength={180}
+                  placeholder="Tell people what you are building, playing, or collecting."
+                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 outline-none placeholder:text-muted focus:border-primary"
+                />
+              </label>
+
               <div>
                 <p className="mb-2 text-sm font-medium">Avatar</p>
+                <div className="mb-3 flex items-center gap-3">
+                  <ProfileAvatar
+                    avatar={onboardingAvatar}
+                    avatarUrl={onboardingAvatarPreviewUrl}
+                    label={onboardingName || "Grove profile"}
+                    size="lg"
+                    viewable={false}
+                  />
+                  <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-text/15 bg-background px-3 text-sm font-medium text-muted transition-colors hover:border-primary hover:text-text">
+                    <Upload size={15} />
+                    {onboardingUploadPending ? "Uploading" : "Upload image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={onboardingUploadPending}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void uploadOnboardingAvatar(file);
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
                 <div className="grid grid-cols-6 gap-2">
-                  {["niko", "mira", "raihan", "juno", "kai", "alba"].map((avatar) => (
+                  {avatarChoices.map((avatar) => (
                     <button
                       key={avatar}
                       type="button"
-                      onClick={() => setOnboardingAvatar(avatar)}
+                      onClick={() => {
+                        setOnboardingAvatar(avatar);
+                        setOnboardingAvatarStorageId(undefined);
+                        setOnboardingAvatarPreviewUrl(null);
+                      }}
                       className={`grid aspect-square place-items-center rounded-md border bg-background transition-colors ${
-                        onboardingAvatar === avatar
+                        onboardingAvatar === avatar && !onboardingAvatarPreviewUrl
                           ? "border-primary bg-primary-muted"
                           : "border-border hover:border-primary"
                       }`}
                       aria-label={`Choose ${avatar} avatar`}
                     >
-                      <Avatar user={avatar} size="sm" />
+                      <Avatar user={avatar} size="sm" viewable={false} />
                     </button>
                   ))}
                 </div>
@@ -657,12 +830,38 @@ export default function Home() {
 
               <button
                 type="submit"
-                disabled={onboardingPending || onboardingName.trim().length < 2}
+                disabled={onboardingPending || onboardingUploadPending || onboardingName.trim().length < 2}
                 className="h-11 w-full rounded-md bg-dark px-4 text-sm font-medium text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {onboardingPending ? "Saving" : "Enter Grove"}
               </button>
             </div>
+            ) : (
+              <div className="space-y-4 p-5">
+                {xConnectError ? (
+                  <p className="rounded-md border border-danger bg-danger-muted px-3 py-2 text-sm text-danger">
+                    {xConnectError}
+                  </p>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingOpen(false)}
+                    className="h-10 rounded-md border border-border bg-background px-4 text-sm font-medium text-muted transition-colors hover:border-text hover:text-text"
+                  >
+                    Skip for now
+                  </button>
+                  <button
+                    type="button"
+                    disabled={xConnectPending}
+                    onClick={() => void connectX()}
+                    className="h-10 rounded-md bg-dark px-4 text-sm font-medium text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {xConnectPending ? "Opening X" : "Connect X"}
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         </div>
       ) : null}

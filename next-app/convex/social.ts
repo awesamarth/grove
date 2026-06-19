@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 function normalizeWallet(walletAddress: string) {
   return walletAddress.toLowerCase();
@@ -13,14 +14,19 @@ async function getProfileByWallet(ctx: MutationCtx, walletAddress: string) {
     .unique();
 }
 
+async function authenticatedWallet(ctx: MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Sign in with MOSS first.");
+  return normalizeWallet(identity.subject);
+}
+
 export const setFollow = mutation({
   args: {
-    devWalletAddress: v.string(),
     targetWallet: v.string(),
     following: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const followerWallet = normalizeWallet(args.devWalletAddress);
+    const followerWallet = await authenticatedWallet(ctx);
     const targetWallet = normalizeWallet(args.targetWallet);
 
     if (followerWallet === targetWallet) {
@@ -44,6 +50,12 @@ export const setFollow = mutation({
         targetWallet,
         createdAt: Date.now(),
       });
+      await ctx.runMutation(internal.notifications.insertNotification, {
+        walletAddress: targetWallet,
+        kind: "followed",
+        actorWallet: followerWallet,
+        body: `${follower.displayName} started following you.`,
+      });
     }
 
     if (!args.following && existing) {
@@ -54,12 +66,11 @@ export const setFollow = mutation({
 
 export const vote = mutation({
   args: {
-    devWalletAddress: v.string(),
     targetWallet: v.string(),
     value: v.union(v.literal(1), v.literal(-1)),
   },
   handler: async (ctx, args) => {
-    const voterWallet = normalizeWallet(args.devWalletAddress);
+    const voterWallet = await authenticatedWallet(ctx);
     const targetWallet = normalizeWallet(args.targetWallet);
 
     if (voterWallet === targetWallet) {
@@ -93,6 +104,12 @@ export const vote = mutation({
         createdAt: now,
         updatedAt: now,
       });
+      await ctx.runMutation(internal.notifications.insertNotification, {
+        walletAddress: targetWallet,
+        kind: "reputation_vote",
+        actorWallet: voterWallet,
+        body: `${voter.displayName} ${args.value === 1 ? "upvoted" : "downvoted"} your reputation.`,
+      });
     }
 
     if (args.value === 1) upvotes += 1;
@@ -109,14 +126,13 @@ export const vote = mutation({
 
 export const createTipIntent = mutation({
   args: {
-    devWalletAddress: v.string(),
     targetWallet: v.string(),
     amount: v.string(),
     token: v.string(),
     source: v.union(v.literal("web"), v.literal("extension"), v.literal("test")),
   },
   handler: async (ctx, args) => {
-    const fromWallet = normalizeWallet(args.devWalletAddress);
+    const fromWallet = await authenticatedWallet(ctx);
     const toWallet = normalizeWallet(args.targetWallet);
     const from = await getProfileByWallet(ctx, fromWallet);
     const to = await getProfileByWallet(ctx, toWallet);
@@ -133,5 +149,39 @@ export const createTipIntent = mutation({
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+export const updateTipIntentStatus = mutation({
+  args: {
+    intentId: v.id("tipIntents"),
+    status: v.union(v.literal("paid"), v.literal("cancelled"), v.literal("failed")),
+    txHash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const walletAddress = await authenticatedWallet(ctx);
+    const intent = await ctx.db.get(args.intentId);
+    if (!intent) throw new Error("Tip intent not found.");
+    if (intent.fromWallet !== walletAddress) {
+      throw new Error("You can only update your own tip intents.");
+    }
+
+    await ctx.db.patch(args.intentId, {
+      status: args.status,
+      txHash: args.txHash,
+      updatedAt: Date.now(),
+    });
+
+    if (args.status === "paid") {
+      const sender = await getProfileByWallet(ctx, intent.fromWallet);
+      if (sender) {
+        await ctx.runMutation(internal.notifications.insertNotification, {
+          walletAddress: intent.toWallet,
+          kind: "tip_received",
+          actorWallet: intent.fromWallet,
+          body: `${sender.displayName} tipped you ${intent.amount} ${intent.token}.`,
+        });
+      }
+    }
   },
 });

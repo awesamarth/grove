@@ -49,3 +49,7 @@ reference-dumps
 .agents
 .claude
 skills-lock.json
+
+# local-only maintenance helpers
+test-scripts
+apps.md

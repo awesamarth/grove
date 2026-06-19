@@ -2,6 +2,9 @@ import crypto from "node:crypto";
 import type { MessageConfig, MessageToSign } from "@megaeth-labs/wallet-server-verify";
 
 const challengeTtlMs = 5 * 60 * 1000;
+const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
+const groveJwtTtlSeconds = 60 * 60;
+export const groveSessionCookieName = "grove_session";
 
 type ChallengePayload = {
   address: `0x${string}`;
@@ -13,6 +16,12 @@ type ChallengePayload = {
   domain: string;
   uri: string;
   chainId: 4326 | 6343;
+};
+
+type GroveSessionPayload = {
+  walletAddress: string;
+  issuedAt: number;
+  expiresAt: number;
 };
 
 function base64url(value: string | Buffer) {
@@ -78,4 +87,87 @@ export function readChallengeToken(token: string) {
       issuedAt: new Date(payload.issuedAt),
     },
   };
+}
+
+export function createGroveSessionToken(walletAddress: string) {
+  const payload: GroveSessionPayload = {
+    walletAddress: walletAddress.toLowerCase(),
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + sessionTtlMs,
+  };
+  const encoded = base64url(JSON.stringify(payload));
+  return `${encoded}.${signPayload(encoded)}`;
+}
+
+export function readGroveSessionToken(token?: string) {
+  if (!token) return null;
+
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature || signature !== signPayload(encoded)) {
+    return null;
+  }
+
+  const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as GroveSessionPayload;
+  if (Date.now() > payload.expiresAt || !/^0x[a-f0-9]{40}$/.test(payload.walletAddress)) {
+    return null;
+  }
+
+  return payload;
+}
+
+export function groveSessionMaxAgeSeconds() {
+  return Math.floor(sessionTtlMs / 1000);
+}
+
+function groveJwtPrivateKey() {
+  const encoded = process.env.GROVE_JWT_PRIVATE_KEY_B64;
+  if (!encoded) {
+    throw new Error("GROVE_JWT_PRIVATE_KEY_B64 is not configured.");
+  }
+  return Buffer.from(encoded, "base64").toString("utf8");
+}
+
+export function groveJwtIssuer() {
+  return process.env.GROVE_AUTH_ISSUER ?? process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+}
+
+export function groveJwtAudience() {
+  return process.env.GROVE_AUTH_AUDIENCE ?? "grove";
+}
+
+function groveJwtKid() {
+  return process.env.GROVE_JWT_KID ?? "grove-dev-key";
+}
+
+export function createGroveJwt(walletAddress: string) {
+  const issuer = groveJwtIssuer();
+  if (!issuer) {
+    throw new Error("GROVE_AUTH_ISSUER or NEXT_PUBLIC_CONVEX_SITE_URL is not configured.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(
+    JSON.stringify({
+      alg: "RS256",
+      typ: "JWT",
+      kid: groveJwtKid(),
+    }),
+  );
+  const payload = base64url(
+    JSON.stringify({
+      iss: issuer,
+      sub: walletAddress.toLowerCase(),
+      aud: groveJwtAudience(),
+      iat: now,
+      exp: now + groveJwtTtlSeconds,
+      wallet_address: walletAddress.toLowerCase(),
+    }),
+  );
+  const signingInput = `${header}.${payload}`;
+  const signature = crypto
+    .createSign("RSA-SHA256")
+    .update(signingInput)
+    .sign(groveJwtPrivateKey(), "base64url");
+
+  return `${signingInput}.${signature}`;
 }

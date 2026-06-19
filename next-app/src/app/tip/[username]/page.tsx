@@ -7,24 +7,17 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import { GroveNav } from "../../../components/grove-nav";
-
-function Avatar({ user }: { user: string }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`/avatars/${user}.png`}
-      alt=""
-      className="size-16 rounded-md border border-text/15 bg-primary-muted object-cover [image-rendering:pixelated]"
-    />
-  );
-}
+import { ProfileAvatar } from "../../../components/profile-avatar";
+import { useGroveSession } from "../../../lib/use-grove-session";
 
 export default function TipPage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
-  const { status, address, initialised } = useStatus();
+  const { status, initialised } = useStatus();
+  const groveSession = useGroveSession();
   const data = useQuery(api.dashboard.getProfileByUsername, { username });
   const createTipIntent = useMutation(api.social.createTipIntent);
+  const updateTipIntentStatus = useMutation(api.social.updateTipIntentStatus);
   const [amount, setAmount] = useState("1.00");
   const [state, setState] = useState<"idle" | "pending" | "draft" | "paid" | "error">("idle");
   const [message, setMessage] = useState<string>();
@@ -36,7 +29,11 @@ export default function TipPage() {
     setMessage(undefined);
 
     try {
-      let walletAddress = address;
+      const walletAddress = groveSession.walletAddress;
+
+      if (!walletAddress) {
+        throw new Error("Sign in with MOSS before tipping.");
+      }
 
       if (status !== "connected") {
         const connection = await mega.connect();
@@ -50,15 +47,9 @@ export default function TipPage() {
           throw new Error("Connect MOSS before tipping.");
         }
 
-        walletAddress = connection.address;
       }
 
-      if (!walletAddress) {
-        throw new Error("Connect MOSS before tipping.");
-      }
-
-      await createTipIntent({
-        devWalletAddress: walletAddress,
+      const intentId = await createTipIntent({
         targetWallet: data.profile.walletAddress,
         amount,
         token: "USDM",
@@ -70,13 +61,21 @@ export default function TipPage() {
         destination: data.profile.walletAddress as `0x${string}`,
       });
 
+      const txHash =
+        result.receipt?.hash ??
+        result.receipt?.transactionHash ??
+        result.receipts?.[0]?.hash;
+
       if (result.status === "approved") {
+        await updateTipIntentStatus({ intentId, status: "paid", txHash });
         setState("paid");
         setMessage("MOSS approved the payment flow.");
       } else if (result.status === "cancelled") {
+        await updateTipIntentStatus({ intentId, status: "cancelled" });
         setState("draft");
         setMessage("Payment cancelled. The draft intent is still here.");
       } else {
+        await updateTipIntentStatus({ intentId, status: "failed" });
         setState("error");
         setMessage(result.error ?? "MOSS payment failed.");
       }
@@ -111,7 +110,12 @@ export default function TipPage() {
             <>
               <div className="border-b border-border p-5">
                 <div className="flex items-center gap-4">
-                  <Avatar user={data.profile.avatar} />
+                  <ProfileAvatar
+                    avatar={data.profile.avatar}
+                    avatarUrl={data.profile.avatarUrl}
+                    label={data.profile.displayName}
+                    size="lg"
+                  />
                   <div className="min-w-0">
                     <h2 className="truncate text-2xl font-medium">{data.profile.displayName}</h2>
                     <p className="truncate text-sm text-muted">

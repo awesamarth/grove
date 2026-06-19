@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { Errors, verifySignature } from "@megaeth-labs/wallet-server-verify";
-import { readChallengeToken } from "@/lib/moss-auth";
+import {
+  createGroveSessionToken,
+  groveSessionCookieName,
+  groveSessionMaxAgeSeconds,
+  readChallengeToken,
+} from "@/lib/moss-auth";
 
 export async function POST(request: Request) {
   let body: { token?: unknown; signature?: unknown };
@@ -38,7 +43,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: safeCode }, { status: 401 });
   }
 
-  return NextResponse.json({
-    walletAddress: challengeData.challenge.address.toLowerCase(),
+  const walletAddress = challengeData.challenge.address.toLowerCase();
+  const response = NextResponse.json({
+    walletAddress,
   });
+
+  response.cookies.set({
+    name: groveSessionCookieName,
+    value: createGroveSessionToken(walletAddress),
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+    maxAge: groveSessionMaxAgeSeconds(),
+  });
+
+  return response;
 }

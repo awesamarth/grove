@@ -7,18 +7,19 @@ import {
   xClientId,
   xOAuth,
 } from "@/lib/x-oauth";
+import { groveSessionCookieName, readGroveSessionToken } from "@/lib/moss-auth";
 
 export async function POST(request: Request) {
-  let body: { walletAddress?: unknown };
+  const sessionCookie = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${groveSessionCookieName}=`))
+    ?.slice(groveSessionCookieName.length + 1);
+  const session = readGroveSessionToken(sessionCookie ? decodeURIComponent(sessionCookie) : undefined);
 
-  try {
-    body = (await request.json()) as { walletAddress?: unknown };
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  if (typeof body.walletAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(body.walletAddress)) {
-    return NextResponse.json({ error: "Connect MOSS before linking X." }, { status: 400 });
+  if (!session) {
+    return NextResponse.json({ error: "Sign in with MOSS before linking X." }, { status: 401 });
   }
 
   const clientId = xClientId();
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     value: createOAuthCookie({
       state,
       verifier,
-      walletAddress: body.walletAddress.toLowerCase(),
+      walletAddress: session.walletAddress,
       redirectUri,
       expiresAt: Date.now() + 10 * 60 * 1000,
     }),
