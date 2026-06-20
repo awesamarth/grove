@@ -24,6 +24,15 @@ type GroveSessionPayload = {
   expiresAt: number;
 };
 
+type GroveJwtPayload = {
+  iss: string;
+  sub: string;
+  aud: string;
+  iat: number;
+  exp: number;
+  wallet_address: string;
+};
+
 function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
 }
@@ -170,4 +179,40 @@ export function createGroveJwt(walletAddress: string) {
     .sign(groveJwtPrivateKey(), "base64url");
 
   return `${signingInput}.${signature}`;
+}
+
+export function readGroveJwt(token?: string) {
+  if (!token) return null;
+
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const [encodedHeader, encodedPayload, signature] = parts;
+    const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8")) as {
+      alg?: string;
+      typ?: string;
+    };
+    if (header.alg !== "RS256" || header.typ !== "JWT") return null;
+
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+    const valid = crypto
+      .createVerify("RSA-SHA256")
+      .update(signingInput)
+      .verify(crypto.createPublicKey(groveJwtPrivateKey()), signature, "base64url");
+
+    if (!valid) return null;
+
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as GroveJwtPayload;
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp < now) return null;
+    if (payload.iss !== groveJwtIssuer()) return null;
+    if (payload.aud !== groveJwtAudience()) return null;
+    if (!/^0x[a-f0-9]{40}$/.test(payload.sub)) return null;
+    if (payload.wallet_address !== payload.sub) return null;
+
+    return payload;
+  } catch {
+    return null;
+  }
 }

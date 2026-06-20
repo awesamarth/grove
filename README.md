@@ -83,5 +83,5 @@ Example:
 curl https://grove-samarth-saxenas-projects.vercel.app/api/public/x/miramakes
 ```
 
-The response includes profile, reputation, recent public activity, and a `tipUrl`.
+The response includes profile, karma, recent public activity, and a `tipUrl`.
 Unlinked, private, or unverified accounts return `404` with `{ "linked": false }`.

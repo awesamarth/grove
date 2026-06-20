@@ -38,7 +38,7 @@ const activityIcons = {
   tip: WalletCards,
   mint: Sparkles,
   app: Gamepad2,
-  reputation: Trophy,
+  karma: Trophy,
 };
 
 type Privacy = "public" | "limited" | "private";
@@ -86,11 +86,15 @@ export default function Home() {
   const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
   const setFollow = useMutation(api.social.setFollow);
   const vote = useMutation(api.social.vote);
+  const toggleActivityLike = useMutation(api.social.toggleActivityLike);
   const [authPending, setAuthPending] = useState(false);
   const [authState, setAuthState] = useState<"idle" | "success" | "error">("idle");
   const [authError, setAuthError] = useState<string>();
   const [tab, setTab] = useState<"activity" | "people" | "apps">("activity");
   const [optimisticPrivacy, setOptimisticPrivacy] = useState<Privacy>();
+  const [optimisticActivityLikes, setOptimisticActivityLikes] = useState<
+    Record<string, { liked: boolean; reactions: number }>
+  >({});
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingBio, setOnboardingBio] = useState("");
   const [onboardingAvatar, setOnboardingAvatar] = useState("niko");
@@ -298,6 +302,44 @@ export default function Home() {
     });
   }
 
+  async function likeActivity(activityId: Id<"activities">) {
+    if (!viewerWallet) {
+      await signIn();
+      return;
+    }
+
+    if (needsOnboarding) {
+      setAuthError("Finish your Grove profile before liking activity.");
+      setAuthState("error");
+      return;
+    }
+
+    const activity = dashboard?.feed.find((item) => item._id === activityId);
+    const current = optimisticActivityLikes[activityId] ?? (
+      activity
+        ? { liked: activity.likedByViewer, reactions: activity.reactions }
+        : undefined
+    );
+    if (!current) return;
+
+    const next = {
+      liked: !current.liked,
+      reactions: Math.max(0, current.reactions + (current.liked ? -1 : 1)),
+    };
+
+    setOptimisticActivityLikes((likes) => ({ ...likes, [activityId]: next }));
+
+    try {
+      await toggleActivityLike({
+        activityId,
+      });
+    } catch (error) {
+      setOptimisticActivityLikes((likes) => ({ ...likes, [activityId]: current }));
+      setAuthError(error instanceof Error ? error.message : "Could not update like.");
+      setAuthState("error");
+    }
+  }
+
   async function finishOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -453,6 +495,9 @@ export default function Home() {
             {(dashboard?.feed ?? []).map((activity) => {
               const Icon = activityIcons[activity.kind];
               const actor = activity.actor;
+              const optimisticLike = optimisticActivityLikes[activity._id];
+              const likedByViewer = optimisticLike?.liked ?? activity.likedByViewer;
+              const reactions = optimisticLike?.reactions ?? activity.reactions;
               return (
                 <article key={activity._id} className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border p-4 last:border-b-0 sm:p-5">
                   {actor ? (
@@ -487,10 +532,19 @@ export default function Home() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => actor && voteOn(actor.walletAddress, 1)}
-                        className="ml-auto flex items-center gap-1.5 text-xs text-muted hover:text-danger"
+                        onClick={() => void likeActivity(activity._id)}
+                        aria-pressed={likedByViewer}
+                        className={`ml-auto flex items-center gap-1.5 text-xs transition-colors ${
+                          likedByViewer
+                            ? "text-primary hover:text-primary"
+                            : "text-muted hover:text-primary"
+                        }`}
                       >
-                        <Heart size={14} /> {activity.reactions}
+                        <Heart
+                          size={14}
+                          fill={likedByViewer ? "currentColor" : "none"}
+                        />{" "}
+                        {reactions}
                       </button>
                     </div>
                   </div>
@@ -534,7 +588,7 @@ export default function Home() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-mono text-xs font-bold text-primary">{person.reputation}</p>
+                      <p className="font-mono text-xs font-bold text-primary">{person.karma}</p>
                       <div className="mt-1 flex items-center gap-1.5 text-xs">
                         <button
                           type="button"
@@ -661,9 +715,9 @@ export default function Home() {
                   <div className="grid grid-cols-3 border-y border-text/15 py-3 text-center">
                     <div>
                       <p className="font-mono text-base font-bold text-primary">
-                        {dashboard?.viewer?.reputation ?? "—"}
+                        {dashboard?.viewer?.karma ?? "—"}
                       </p>
-                      <p className="text-[11px] text-muted">rep</p>
+                      <p className="text-[11px] text-muted">karma</p>
                     </div>
                     <div>
                       <p className="font-mono text-base font-bold text-primary">
@@ -708,7 +762,7 @@ export default function Home() {
               <span className="font-mono text-[10px] uppercase text-primary-muted">Invite only · soon</span>
             </div>
             <p className="mt-7 text-xl font-medium leading-6">Make your wallet feel like a place.</p>
-            <p className="mt-2 text-sm leading-5 text-white/65">A profile, a reputation, and a history you choose to share.</p>
+            <p className="mt-2 text-sm leading-5 text-white/65">A profile, a karma, and a history you choose to share.</p>
           </section>
         </aside>
       </div>

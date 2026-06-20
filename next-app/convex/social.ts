@@ -82,7 +82,7 @@ export const vote = mutation({
     if (!voter || !target) throw new Error("Both profiles must exist.");
 
     const existing = await ctx.db
-      .query("reputationVotes")
+      .query("karmaVotes")
       .withIndex("by_voterWallet_and_targetWallet", (q) =>
         q.eq("voterWallet", voterWallet).eq("targetWallet", targetWallet),
       )
@@ -97,7 +97,7 @@ export const vote = mutation({
       if (existing.value === -1) downvotes -= 1;
       await ctx.db.patch(existing._id, { value: args.value, updatedAt: now });
     } else {
-      await ctx.db.insert("reputationVotes", {
+      await ctx.db.insert("karmaVotes", {
         voterWallet,
         targetWallet,
         value: args.value,
@@ -106,9 +106,9 @@ export const vote = mutation({
       });
       await ctx.runMutation(internal.notifications.insertNotification, {
         walletAddress: targetWallet,
-        kind: "reputation_vote",
+        kind: "karma_vote",
         actorWallet: voterWallet,
-        body: `${voter.displayName} ${args.value === 1 ? "upvoted" : "downvoted"} your reputation.`,
+        body: `${voter.displayName} ${args.value === 1 ? "upvoted" : "downvoted"} your karma.`,
       });
     }
 
@@ -118,9 +118,42 @@ export const vote = mutation({
     await ctx.db.patch(target._id, {
       upvotes,
       downvotes,
-      reputation: Math.max(0, upvotes - downvotes),
+      karma: Math.max(0, upvotes - downvotes),
       updatedAt: now,
     });
+  },
+});
+
+export const toggleActivityLike = mutation({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, args) => {
+    const walletAddress = await authenticatedWallet(ctx);
+    const profile = await getProfileByWallet(ctx, walletAddress);
+    if (!profile) throw new Error("Create a Grove profile first.");
+
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) throw new Error("Activity not found.");
+
+    const existing = await ctx.db
+      .query("activityLikes")
+      .withIndex("by_activityId_and_walletAddress", (q) =>
+        q.eq("activityId", args.activityId).eq("walletAddress", walletAddress),
+      )
+      .unique();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+      return { liked: false };
+    }
+
+    await ctx.db.insert("activityLikes", {
+      activityId: args.activityId,
+      walletAddress,
+      createdAt: Date.now(),
+    });
+    return { liked: true };
   },
 });
 

@@ -10,7 +10,7 @@ export const insertNotification = internalMutation({
     walletAddress: v.string(),
     kind: v.union(
       v.literal("tip_received"),
-      v.literal("reputation_vote"),
+      v.literal("karma_vote"),
       v.literal("followed"),
     ),
     actorWallet: v.optional(v.string()),
@@ -32,7 +32,7 @@ export const getNotifications = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Sign in with MOSS first.");
+    if (!identity) return [];
     const walletAddress = normalizeWallet(identity.subject);
     const notifications = await ctx.db
       .query("notifications")

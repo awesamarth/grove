@@ -1,0 +1,115 @@
+/* ─── Avatar ring ─── */
+.gr-profile-avatar-frame {
+  border-radius: 9999px !important;
+  box-sizing: border-box !important;
+}
+
+.gr-profile-avatar-frame.gr-avatar-square {
+  border-radius: 15px !important;
+}
+
+.gr-feed-avatar-container {
+  border-radius: 9999px !important;
+  box-shadow: 0 0 0 2px var(--grove-ring, #93c7a0) !important;
+}
+
+/* ─── Badge ─── */
+.gr-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  margin-left: 3px !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-family: "SFMono-Regular", Consolas, monospace !important;
+  color: #93c7a0 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  white-space: nowrap !important;
+  flex: 0 0 auto !important;
+  vertical-align: middle !important;
+  align-self: center !important;
+  position: relative !important;
+  top: 0 !important;
+}
+
+.gr-badge-icon {
+  display: inline-block !important;
+  flex: 0 0 auto !important;
+  vertical-align: middle !important;
+  align-self: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+}
+
+.gr-badge:hover {
+  opacity: 0.7 !important;
+}
+
+.gr-badge-p {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  margin-left: 4px !important;
+  padding: 0 !important;
+  vertical-align: middle !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  white-space: nowrap !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  top: -2px !important;
+}
+
+.gr-badge-t {
+  top: 1px !important;
+}
+
+/* ─── Popup ─── */
+.gr-popup {
+  position: fixed;
+  z-index: 999999;
+  width: 220px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(244, 241, 232, 0.14);
+  background: #0d1c12;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+  color: #f3efe7;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  animation: gr-fade 140ms ease;
+}
+@keyframes gr-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gr-popup-hdr { margin-bottom: 8px; }
+.gr-popup-hdr b { display: block; font-size: 14px; font-weight: 700; color: #f3efe7; }
+.gr-popup-hdl { color: #a1ada4; font-size: 12px; }
+.gr-popup-row { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.gr-popup-row span:first-child { color: #a1ada4; font-size: 12px; }
+.gr-popup-val { font-size: 14px; font-weight: 700; color: #93c7a0; font-family: "SFMono-Regular", Consolas, monospace; }
+.gr-popup-addr { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; color: #a1ada4; }
+.gr-popup-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f3efe7;
+  color: #07150c !important;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+.gr-popup-tip:hover { opacity: 0.85; }

@@ -135,7 +135,7 @@ export const getDashboard = query({
 
     const publicProfiles = await ctx.db
       .query("profiles")
-      .withIndex("by_privacy_and_reputation", (q) => q.eq("privacy", "public"))
+      .withIndex("by_privacy_and_karma", (q) => q.eq("privacy", "public"))
       .order("desc")
       .take(12);
 
@@ -167,9 +167,17 @@ export const getDashboard = query({
     const feed = [];
     for (const activity of visibleActivities) {
       const actor = actors.get(activity.actorWallet);
+      const likes = await ctx.db
+        .query("activityLikes")
+        .withIndex("by_activityId", (q) => q.eq("activityId", activity._id))
+        .collect();
       feed.push({
         ...activity,
         time: timeAgo(activity.happenedAt),
+        reactions: activity.reactions + likes.length,
+        likedByViewer: viewerWallet
+          ? likes.some((like) => like.walletAddress === viewerWallet)
+          : false,
         actor: actor
           ? {
               walletAddress: actor.walletAddress,
@@ -179,7 +187,7 @@ export const getDashboard = query({
               xVerified: actor.xVerified,
               avatar: actor.avatar,
               avatarUrl: await avatarUrl(ctx, actor),
-              reputation: actor.reputation,
+              karma: actor.karma,
             }
           : null,
       });
@@ -204,7 +212,7 @@ export const getDashboard = query({
           onboardingComplete: profileIsComplete(profile),
           handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
           isFollowed: followedWallets.has(profile.walletAddress),
-          mutuals: Math.max(2, Math.round(profile.reputation / 7)),
+          mutuals: Math.max(2, Math.round(profile.karma / 7)),
         }))),
       stats: {
         people: publicProfiles.length,
@@ -232,7 +240,7 @@ export const searchProfiles = query({
 
     const publicProfiles = await ctx.db
       .query("profiles")
-      .withIndex("by_privacy_and_reputation", (q) => q.eq("privacy", "public"))
+      .withIndex("by_privacy_and_karma", (q) => q.eq("privacy", "public"))
       .order("desc")
       .take(50);
 
@@ -265,7 +273,7 @@ export const searchProfiles = query({
       xHandle: profile.xHandle ?? null,
       avatar: profile.avatar,
       avatarUrl: await avatarUrl(ctx, profile),
-      reputation: profile.reputation,
+      karma: profile.karma,
     })));
   },
 });
@@ -306,7 +314,7 @@ export const getPublicProfileByXHandle = query({
       xHandle: profile.xHandle ?? null,
       avatar: profile.avatar,
       avatarUrl: await avatarUrl(ctx, profile),
-      reputation: profile.reputation,
+      karma: profile.karma,
       upvotes: profile.upvotes,
       downvotes: profile.downvotes,
       activitySharing: profile.activitySharing,
@@ -463,7 +471,7 @@ export const upsertDevProfile = mutation({
       onboardingComplete: Boolean(args.displayName?.trim()),
       privacy: "public",
       activitySharing: "public",
-      reputation: 50,
+      karma: 50,
       upvotes: 50,
       downvotes: 0,
       createdAt: now,
@@ -518,7 +526,7 @@ export const completeOnboarding = mutation({
       onboardingComplete: true,
       privacy: "public",
       activitySharing: "public",
-      reputation: 50,
+      karma: 50,
       upvotes: 50,
       downvotes: 0,
       createdAt: now,
@@ -656,10 +664,10 @@ export const wipeWalletForTesting = mutation({
 
     const votes = [
       ...(await ctx.db
-        .query("reputationVotes")
+        .query("karmaVotes")
         .withIndex("by_targetWallet", (q) => q.eq("targetWallet", walletAddress))
         .collect()),
-      ...(await ctx.db.query("reputationVotes").collect()).filter(
+      ...(await ctx.db.query("karmaVotes").collect()).filter(
         (vote) => vote.voterWallet === walletAddress,
       ),
     ];
@@ -682,6 +690,15 @@ export const wipeWalletForTesting = mutation({
       await ctx.db.delete(tipIntent._id);
     }
 
+    const activityLikes = (await ctx.db.query("activityLikes").collect()).filter(
+      (like) =>
+        like.walletAddress === walletAddress ||
+        activities.some((activity) => activity._id === like.activityId),
+    );
+    for (const like of activityLikes) {
+      await ctx.db.delete(like._id);
+    }
+
     if (profile) {
       await ctx.db.delete(profile._id);
     }
@@ -692,6 +709,7 @@ export const wipeWalletForTesting = mutation({
       deletedVotes: votes.length,
       deletedActivities: activities.length,
       deletedTipIntents: tipIntents.length,
+      deletedActivityLikes: activityLikes.length,
     };
   },
 });

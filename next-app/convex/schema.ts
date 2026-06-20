@@ -19,7 +19,7 @@ export default defineSchema({
     onboardingComplete: v.optional(v.boolean()),
     privacy,
     activitySharing: privacy,
-    reputation: v.number(),
+    karma: v.number(),
     upvotes: v.number(),
     downvotes: v.number(),
     createdAt: v.number(),
@@ -28,7 +28,7 @@ export default defineSchema({
     .index("by_walletAddress", ["walletAddress"])
     .index("by_username", ["username"])
     .index("by_xHandle", ["xHandle"])
-    .index("by_privacy_and_reputation", ["privacy", "reputation"])
+    .index("by_privacy_and_karma", ["privacy", "karma"])
     .searchIndex("search_displayName", {
       searchField: "displayName",
       filterFields: ["privacy"],
@@ -50,7 +50,7 @@ export default defineSchema({
       v.literal("tip"),
       v.literal("mint"),
       v.literal("app"),
-      v.literal("reputation"),
+      v.literal("karma"),
     ),
     appName: v.optional(v.string()),
     body: v.string(),
@@ -69,7 +69,16 @@ export default defineSchema({
     .index("by_visibility_and_happenedAt", ["visibility", "happenedAt"])
     .index("by_actorWallet_and_happenedAt", ["actorWallet", "happenedAt"]),
 
-  reputationVotes: defineTable({
+  activityLikes: defineTable({
+    activityId: v.id("activities"),
+    walletAddress: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_activityId", ["activityId"])
+    .index("by_walletAddress", ["walletAddress"])
+    .index("by_activityId_and_walletAddress", ["activityId", "walletAddress"]),
+
+  karmaVotes: defineTable({
     voterWallet: v.string(),
     targetWallet: v.string(),
     value: v.union(v.literal(1), v.literal(-1)),
@@ -103,7 +112,7 @@ export default defineSchema({
     walletAddress: v.string(),
     kind: v.union(
       v.literal("tip_received"),
-      v.literal("reputation_vote"),
+      v.literal("karma_vote"),
       v.literal("followed"),
     ),
     actorWallet: v.optional(v.string()),

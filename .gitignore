@@ -53,3 +53,9 @@ skills-lock.json
 # local-only maintenance helpers
 test-scripts
 apps.md
+
+# Chrome creates this when loading unpacked extensions locally.
+extension/_metadata
+
+# extension build output
+extension/dist

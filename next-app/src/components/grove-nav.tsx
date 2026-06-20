@@ -253,7 +253,7 @@ export function GroveNav() {
                           {result.xHandle ? `@${result.xHandle}` : result.username}
                         </span>
                       </span>
-                      <span className="font-mono text-xs text-primary">{result.reputation}</span>
+                      <span className="font-mono text-xs text-primary">{result.karma}</span>
                     </Link>
                   ))
                 ) : (

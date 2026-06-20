@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Grove MOSS Test",
+  "version": "0.0.1",
+  "description": "Grove sidebar companion for MOSS wallets.",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "storage", "identity"],
+  "host_permissions": [
+    "https://localhost:3000/*",
+    "https://grove-samarth-saxenas-projects.vercel.app/*",
+    "https://ongrove.network/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["dist/content.js"],
+      "css": ["dist/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["grove-logo.png"],
+      "matches": ["https://x.com/*", "https://twitter.com/*"]
+    }
+  ],
+  "action": {
+    "default_title": "Open Grove"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self' https://localhost:3000 https://grove-samarth-saxenas-projects.vercel.app https://ongrove.network; object-src 'none';"
+  }
+}

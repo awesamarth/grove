@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grove Sidebar</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="header">
+        <img class="logo" src="grove-logo.png" alt="" />
+        <div>
+          <h1>Grove</h1>
+          <p>Your MegaETH social sidebar</p>
+        </div>
+        <button id="themeBtn" type="button" class="theme-toggle" aria-label="Toggle color mode">
+  <svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </svg>
+</button>
+      </header>
+
+      <section class="panel test-panel">
+        <div class="panel-title">Testing panel</div>
+        <div class="row">
+          <span>Session</span>
+          <strong id="sessionState">checking</strong>
+        </div>
+        <div class="row">
+          <span>Wallet</span>
+          <strong id="walletState">not connected</strong>
+        </div>
+        <div class="row">
+          <span>Handle</span>
+          <strong id="handleState">none</strong>
+        </div>
+        <div class="row">
+          <span>Karma</span>
+          <strong id="repState">—</strong>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="connectBtn" type="button" class="primary">Connect Grove</button>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="openProfileBtn" type="button">Open profile</button>
+        <button id="logoutBtn" type="button">Log out</button>
+      </section>
+
+      <section id="profileCard" class="hero-card hidden">
+        <div id="avatar" class="hero-avatar">G</div>
+        <div class="hero-name" id="displayName">Not connected</div>
+        <div class="hero-meta" id="profileMeta">Connect Grove to load your profile.</div>
+        <div class="hero-rep"><span id="heroRep">—</span> karma</div>
+        <button id="profileHeroBtn" type="button" class="profile-cta">Profile ↗</button>
+      </section>
+
+      <section id="viewingCard" class="focus-card hidden">
+        <div class="panel-title">Currently viewing</div>
+        <div class="viewing-main">
+          <div id="viewingAvatar" class="small-avatar">?</div>
+          <div class="viewing-copy">
+            <div id="viewingName" class="viewing-name">Display name</div>
+            <div id="viewingMeta" class="viewing-meta">@handle · 0 karma</div>
+          </div>
+        </div>
+        <button id="viewingTipBtn" type="button" class="profile-cta">Tip ↗</button>
+        <div class="karma-actions">
+          <button id="viewingUpBtn" type="button">Give Karma</button>
+          <button id="viewingDownBtn" type="button">Slash Karma</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Notifications</div>
+        <div id="notificationList" class="list">
+          <div class="empty">No notifications yet.</div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="dist/sidepanel.js"></script>
+  </body>
+</html>

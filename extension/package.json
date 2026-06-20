@@ -1,0 +1,15 @@
+{
+  "name": "grove-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/background.ts src/sidepanel.ts src/content.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/chrome": "^0.1.0",
+    "typescript": "^5"
+  }
+}

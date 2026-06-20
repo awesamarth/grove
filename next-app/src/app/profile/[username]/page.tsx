@@ -373,7 +373,7 @@ export default function ProfilePage() {
 
             <div className="mt-5 grid grid-cols-3 border-y border-text/20">
               {[
-                [profileData.profile.reputation, "rep"],
+                [profileData.profile.karma, "karma"],
                 [profileData.profile.upvotes, "upvotes"],
                 [profileData.profile.downvotes, "downvotes"],
               ].map(([value, label]) => (
@@ -484,7 +484,7 @@ export default function ProfilePage() {
               </div>
               <p className="mt-7 text-xl font-medium leading-6">A wallet people can recognize.</p>
               <p className="mt-2 text-sm leading-5 text-white/65">
-                Reputation, public activity, and identity linkage stay opt-in.
+                Karma, public activity, and identity linkage stay opt-in.
               </p>
             </section>
           </aside>
