@@ -74,6 +74,9 @@ function getHandleFromUrl(): string | null {
   return (!seg || NON_PROFILE.has(seg) || seg.includes(".")) ? null : seg.replace(/^@/, "");
 }
 
+// ─── Profile page guard ───
+let profileGen = 0;
+
 // ─── Render helpers ───
 function groveIcon(size = 12) {
   return `<img src="${BADGE_ICON}" class="gr-badge-icon" style="width:${size}px!important;height:${size}px!important" />`;
@@ -197,7 +200,7 @@ function makePopup(p: GroveProfile) {
     </div>
     <div class="gr-popup-row"><span>Karma</span><span class="gr-popup-val">${p.karma}</span></div>
     <div class="gr-popup-row"><span>Wallet</span><span class="gr-popup-addr">${p.walletAddress.slice(0,6)}...${p.walletAddress.slice(-4)}</span></div>
-    <a class="gr-popup-tip" href="${GROVE_ORIGIN}/tip/${encodeURIComponent(p.username)}" target="_blank">${groveIcon(23)} Tip with MOSS ↗</a>
+    <button class="gr-popup-tip" data-tip-username="${p.username}">${groveIcon(23)} Tip with MOSS</button>
   `;
   return d;
 }
@@ -234,6 +237,24 @@ function showPopup(anchor: HTMLElement, p: GroveProfile) {
     }
   };
 
+  const tipBtn = activePopup.querySelector<HTMLButtonElement>(".gr-popup-tip");
+  if (tipBtn) {
+    tipBtn.addEventListener("click", () => {
+      const username = tipBtn.dataset.tipUsername;
+      if (username) {
+        const w = 480, h = 700;
+        const left = Math.round(window.screenLeft + (window.outerWidth - w) / 2);
+        const top = Math.round(window.screenTop + (window.outerHeight - h) / 2);
+        window.open(
+          `${GROVE_ORIGIN}/tip/${encodeURIComponent(username)}`,
+          "grove-tip",
+          `width=${w},height=${h},popup,left=${left},top=${top}`
+        );
+      }
+      close();
+    });
+  }
+
   setTimeout(() => {
     document.addEventListener("click", onOutsideClick);
     document.addEventListener("keydown", onEscape);
@@ -242,6 +263,8 @@ function showPopup(anchor: HTMLElement, p: GroveProfile) {
 
 // ─── Profile page ───
 function processProfilePage(handle: string) {
+  const gen = ++profileGen;
+
   // Wait for [data-testid="UserName"] to exist
   const waitForName = (cb: () => void) => {
     if (document.querySelector('[data-testid="UserName"]')) { cb(); return; }
@@ -252,8 +275,10 @@ function processProfilePage(handle: string) {
   };
 
   waitForName(() => {
+    if (profileGen !== gen) return;
     console.debug("[Grove] Profile page detected:", handle);
     fetchProfile(handle).then(p => {
+      if (profileGen !== gen) return;
       if (!p) { console.debug("[Grove] No profile for", handle); return; }
       console.debug("[Grove] Profile loaded:", p);
 
