@@ -57,8 +57,22 @@ function renderShareButton(btn: HTMLButtonElement) {
   `;
 }
 
+function renderStatusButton(btn: HTMLButtonElement, text: string, outlink = false) {
+  btn.innerHTML = `
+    <span style="display:inline-flex;align-items:center;justify-content:center;gap:${outlink ? "3px" : "0"};line-height:1">
+      <span style="display:block;line-height:1;transform:translateY(-2px)">${text}</span>
+      ${outlink ? `
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="display:block;flex:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;transform:translateY(1px)">
+          <path d="M6 12L12 6" />
+          <path d="M7.5 6H12V10.5" />
+        </svg>
+      ` : ""}
+    </span>
+  `;
+}
+
 function setButtonStatus(btn: HTMLButtonElement, text: string, resetMs = 0) {
-  btn.textContent = text;
+  renderStatusButton(btn, text);
   if (resetMs) setTimeout(() => renderShareButton(btn), resetMs);
 }
 
@@ -119,6 +133,10 @@ function injectButton() {
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (btn.dataset.groveSharedUrl) {
+      window.open(btn.dataset.groveSharedUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     void handleShare(btn);
   });
 }
@@ -295,9 +313,10 @@ async function handleShare(btn: HTMLButtonElement) {
         multiplier: meta.multiplier,
         asset: meta.asset,
       },
-      (res: { ok?: boolean; error?: string }) => {
+      (res: { ok?: boolean; error?: string; url?: string }) => {
         if (res?.ok) {
-          setButtonStatus(btn, "Shared! ✓", 2000);
+          if (res.url) btn.dataset.groveSharedUrl = res.url;
+          renderStatusButton(btn, "Shared", true);
         } else {
           console.error("[Grove] Euphoria upload failed:", res?.error);
           setButtonStatus(btn, res?.error ?? "Failed", 3000);

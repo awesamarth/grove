@@ -3,6 +3,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 const tabViews = new Map<number, string | null>();
+const GROVE_ORIGIN = "https://localhost:3000";
 
 async function responseError(response: Response) {
   const text = await response.text();
@@ -13,6 +14,20 @@ async function responseError(response: Response) {
     const preview = text.replace(/\s+/g, " ").slice(0, 120);
     return `Upload failed (${response.status} ${response.statusText}): ${preview || "Non-JSON response"}`;
   }
+}
+
+async function ownActivityUrl(token: string) {
+  const response = await fetch(`${GROVE_ORIGIN}/api/extension/me`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!response.ok) return `${GROVE_ORIGIN}/`;
+
+  const data = await response.json() as { viewer?: { username?: string } | null };
+  const username = data.viewer?.username;
+  return username
+    ? `${GROVE_ORIGIN}/profile/${encodeURIComponent(username)}/activity`
+    : `${GROVE_ORIGIN}/`;
 }
 
 function activeTabView() {
@@ -72,7 +87,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: "Not signed in to Grove" });
         return;
       }
-      fetch("https://localhost:3000/api/euphoria/share", {
+      fetch(`${GROVE_ORIGIN}/api/euphoria/share`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -89,7 +104,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })
         .then(async (r) => {
           if (!r.ok) throw new Error(await responseError(r));
-          sendResponse({ ok: true });
+          sendResponse({ ok: true, url: await ownActivityUrl(token) });
         })
         .catch((err) => {
           console.error("[Grove] Euphoria share upload failed:", err);
@@ -100,7 +115,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "fetch-profile") {
     const h = encodeURIComponent(msg.handle as string);
-    fetch(`https://localhost:3000/api/public/x/${h}`, { signal: AbortSignal.timeout(3000) })
+    fetch(`${GROVE_ORIGIN}/api/public/x/${h}`, { signal: AbortSignal.timeout(3000) })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.linked && data?.profile) {
