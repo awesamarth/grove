@@ -317,6 +317,7 @@ export const getPublicProfileByXHandle = query({
       karma: profile.karma,
       upvotes: profile.upvotes,
       downvotes: profile.downvotes,
+      bio: profile.bio ?? null,
       activitySharing: profile.activitySharing,
       recentActivities: recentActivities
         .filter((activity) => activity.visibility === "public")

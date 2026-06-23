@@ -67,14 +67,23 @@ const els = {
   viewingName: byId("viewingName"),
   viewingMeta: byId("viewingMeta"),
   viewingAvatar: byId("viewingAvatar"),
+  viewingBio: byId("viewingBio"),
+  viewingStats: byId("viewingStats"),
+  viewingUp: byId("viewingUp"),
+  viewingDown: byId("viewingDown"),
   viewingTipBtn: byId("viewingTipBtn") as HTMLButtonElement,
+  viewingProfileBtn: byId("viewingProfileBtn") as HTMLButtonElement,
   viewingUpBtn: byId("viewingUpBtn") as HTMLButtonElement,
   viewingDownBtn: byId("viewingDownBtn") as HTMLButtonElement,
+  viewingActivity: byId("viewingActivity"),
+  viewingActivityList: byId("viewingActivityList"),
   notificationList: byId("notificationList"),
 };
 
 let currentSession: StoredSession | null = null;
-let currentProfilePath: string | null = null;
+let currentOwnProfilePath: string | null = null;
+let currentViewingProfilePath: string | null = null;
+let currentViewingHandle: string | null = null;
 
 type Theme = "light" | "dark";
 
@@ -199,7 +208,9 @@ function renderEmpty(message: string) {
   els.handleState.textContent = "none";
   els.repState.textContent = "—";
   els.notificationList.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
-  currentProfilePath = null;
+  currentOwnProfilePath = null;
+  currentViewingProfilePath = null;
+  currentViewingHandle = null;
 }
 
 function renderMe(data: ExtensionMe) {
@@ -212,7 +223,7 @@ function renderMe(data: ExtensionMe) {
     return;
   }
 
-  currentProfilePath = `/profile/${viewer.username}`;
+  currentOwnProfilePath = `/profile/${viewer.username}`;
   els.profileCard.classList.remove("hidden");
   els.displayName.textContent = viewer.displayName;
   els.profileMeta.textContent = `@${viewer.xHandle ?? viewer.username}`;
@@ -290,11 +301,11 @@ els.connectBtn.addEventListener("click", () => void connect());
 els.themeBtn.addEventListener("click", () => void toggleTheme());
 els.refreshBtn.addEventListener("click", () => void loadMe());
 els.openProfileBtn.addEventListener("click", () => {
-  const path = currentProfilePath ?? "/";
+  const path = currentOwnProfilePath ?? "/";
   void chrome.tabs.create({ url: `${GROVE_ORIGIN}${path}` });
 });
 els.profileHeroBtn.addEventListener("click", () => {
-  const path = currentProfilePath ?? "/";
+  const path = currentOwnProfilePath ?? "/";
   void chrome.tabs.create({ url: `${GROVE_ORIGIN}${path}` });
 });
 els.viewingTipBtn.addEventListener("click", () => {
@@ -302,6 +313,10 @@ els.viewingTipBtn.addEventListener("click", () => {
 });
 els.viewingUpBtn.addEventListener("click", () => undefined);
 els.viewingDownBtn.addEventListener("click", () => undefined);
+els.viewingProfileBtn.addEventListener("click", () => {
+  const path = currentViewingProfilePath ?? "/";
+  void chrome.tabs.create({ url: `${GROVE_ORIGIN}${path}` });
+});
 els.logoutBtn.addEventListener("click", () => {
   void setStoredSession(null).then(() => {
     els.sessionState.textContent = "signed out";
@@ -312,45 +327,87 @@ els.logoutBtn.addEventListener("click", () => {
 void loadMe();
 void loadTheme();
 
-void loadMe();
-
-// Listen for X profile view updates from content script
-chrome.runtime.onMessage.addListener(async (msg) => {
-  if (msg.type !== "x-profile-view") return;
-  if (!msg.handle) {
+async function renderViewingHandle(handle: string | null) {
+  if (!handle) {
+    currentViewingHandle = null;
+    currentViewingProfilePath = null;
     els.viewingCard.classList.add("hidden");
     return;
   }
+
+  if (handle === currentViewingHandle && !els.viewingCard.classList.contains("hidden")) return;
+  currentViewingHandle = handle;
+
   try {
-    const res = await fetch(`${GROVE_ORIGIN}/api/public/x/${encodeURIComponent(msg.handle)}`, {
+    const res = await fetch(`${GROVE_ORIGIN}/api/public/x/${encodeURIComponent(handle)}`, {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) throw new Error("not found");
-    const profile: {
-      displayName: string;
-      username: string;
-      walletAddress: string;
-      karma: number;
-      avatarUrl?: string | null;
-    } = await res.json();
+    const data = await res.json();
+    const p = data.profile;
+    if (!p) throw new Error("no profile");
+
+    const activity = data.activity;
 
     els.viewingCard.classList.remove("hidden");
-    els.viewingAvatar.textContent = profile.displayName.charAt(0).toUpperCase();
-    els.viewingName.textContent = profile.displayName;
-    els.viewingMeta.textContent = `@${profile.username} · ${profile.karma} karma`;
 
-    if (profile.avatarUrl) {
-      els.viewingAvatar.innerHTML = `<img src="${escapeHtml(profile.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:999px" />`;
+    // Avatar
+    if (p.avatarUrl) {
+      els.viewingAvatar.innerHTML = `<img src="${escapeHtml(p.avatarUrl)}" alt="" />`;
     } else {
-      els.viewingAvatar.textContent = profile.displayName.charAt(0).toUpperCase();
+      els.viewingAvatar.innerHTML = "";
+      els.viewingAvatar.textContent = p.displayName.charAt(0).toUpperCase();
     }
 
+    els.viewingName.textContent = p.displayName;
+    els.viewingMeta.textContent = `@${p.username} · ${p.karma} karma`;
+
+    // Bio
+    if (p.bio) {
+      els.viewingBio.textContent = p.bio;
+      els.viewingBio.classList.remove("hidden");
+    } else {
+      els.viewingBio.classList.add("hidden");
+    }
+
+    // Stats
+    els.viewingUp.textContent = String(p.upvotes ?? 0);
+    els.viewingDown.textContent = String(p.downvotes ?? 0);
+    els.viewingStats.classList.remove("hidden");
+
+    // Tip button
     els.viewingTipBtn.onclick = () => {
-      void chrome.tabs.create({ url: `${GROVE_ORIGIN}/tip/${encodeURIComponent(profile.username)}` });
+      void chrome.tabs.create({ url: `${GROVE_ORIGIN}/tip/${encodeURIComponent(p.username)}` });
     };
 
-    currentProfilePath = `/profile/${profile.username}`;
+    currentViewingProfilePath = `/profile/${p.username}`;
+
+    // Recent activity
+    const recent = activity?.recent ?? [];
+    if (recent.length > 0) {
+      els.viewingActivityList.innerHTML = recent.map((a: { body: string; happenedAt: number }) =>
+        `<div class="activity-item">
+          <div class="activity-body">${escapeHtml(a.body)}</div>
+          <div class="activity-time">${formatAge(a.happenedAt)}</div>
+        </div>`
+      ).join("");
+      els.viewingActivity.classList.remove("hidden");
+    } else {
+      els.viewingActivity.classList.add("hidden");
+    }
   } catch {
+    currentViewingHandle = null;
+    currentViewingProfilePath = null;
     els.viewingCard.classList.add("hidden");
   }
+}
+
+// Listen for X profile view updates from content script/background.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== "x-profile-view") return;
+  void renderViewingHandle(msg.handle ?? null);
+});
+
+chrome.runtime.sendMessage({ type: "get-current-view" }, (res: { ok?: boolean; handle?: string | null }) => {
+  void renderViewingHandle(res?.handle ?? null);
 });

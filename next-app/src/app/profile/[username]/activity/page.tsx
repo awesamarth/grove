@@ -8,6 +8,7 @@ import { useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import { GroveNav } from "../../../../components/grove-nav";
 import { ProfileAvatar } from "../../../../components/profile-avatar";
+import { ActivityDetail, activityBodyText } from "../../../../components/activity-detail";
 
 export default function ProfileActivityPage() {
   const params = useParams<{ username: string }>();
@@ -64,14 +65,12 @@ export default function ProfileActivityPage() {
                 data.activities.map((activity) => (
                   <article key={activity._id} className="border-b border-border p-4 last:border-b-0 sm:p-5">
                     <div className="flex items-start justify-between gap-4">
-                      <p className="text-[15px] leading-6">{activity.body}</p>
+                      <p className="text-[15px] leading-6">{activityBodyText(activity.body, activity.detail)}</p>
                       <span className="shrink-0 font-mono text-[11px] text-muted">
                         {minutesAgo(activity.happenedAt)}m
                       </span>
                     </div>
-                    <div className="mt-3 inline-flex min-h-7 items-center rounded-md border border-text/15 bg-primary-muted px-2 font-mono text-[11px] text-primary">
-                      {activity.detail}
-                    </div>
+                    <div className="mt-3"><ActivityDetail detail={activity.detail} /></div>
                   </article>
                 ))
               ) : (

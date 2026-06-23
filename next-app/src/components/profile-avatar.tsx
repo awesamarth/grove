@@ -82,7 +82,7 @@ export function ProfileAvatar({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="absolute -right-2 -top-2 grid size-9 place-items-center rounded-full border border-text/15 bg-panel text-text shadow-lg hover:border-primary"
+              className="absolute -right-2 -top-2 grid size-9 place-items-center rounded-full bg-panel text-text shadow-lg"
               aria-label="Close avatar"
             >
               <X size={17} />
@@ -91,7 +91,7 @@ export function ProfileAvatar({
             <img
               src={src}
               alt={label ?? "Avatar"}
-              className={`aspect-square w-full rounded-lg border border-text/15 bg-panel object-cover shadow-[0_24px_80px_rgb(5_32_13/0.35)] ${
+              className={`aspect-square w-full rounded-lg bg-panel object-cover shadow-[0_24px_80px_rgb(5_32_13/0.35)] ${
                 isBundledAvatar ? "[image-rendering:pixelated]" : ""
               }`}
             />

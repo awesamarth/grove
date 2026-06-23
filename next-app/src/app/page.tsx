@@ -22,6 +22,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { GroveNav } from "../components/grove-nav";
 import { ProfileAvatar } from "../components/profile-avatar";
+import { ActivityDetail, activityBodyText } from "../components/activity-detail";
 import { useXConnect } from "../components/x-connect-modal";
 import { notifyGroveSessionChanged, useGroveSession } from "../lib/use-grove-session";
 
@@ -520,16 +521,13 @@ export default function Home() {
                             {actor?.xHandle ? `@${actor.xHandle}` : actor?.username}
                           </span>
                         </p>
-                        <p className="mt-2 text-[15px] leading-6 text-text">{activity.body}</p>
+                        <p className="mt-2 text-[15px] leading-6 text-text">{activityBodyText(activity.body, activity.detail)}</p>
                       </div>
                       <span className="shrink-0 font-mono text-[11px] text-muted">{activity.time}</span>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className={`activity-chip activity-${activity.tone}`}>
-                        <Icon size={13} />
-                        <span className="mono-optical-align">{activity.detail}</span>
-                      </span>
+                    <div className="mt-3 flex items-end gap-2">
+                      <ActivityDetail detail={activity.detail} />
                       <button
                         type="button"
                         onClick={() => void likeActivity(activity._id)}

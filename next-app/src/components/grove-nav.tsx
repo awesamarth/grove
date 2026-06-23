@@ -217,7 +217,7 @@ export function GroveNav() {
             </span>
           </Link>
 
-          <div className="relative ml-auto hidden w-full max-w-xs md:block">
+          <div className="relative hidden w-full max-w-xs md:block">
             <label className="flex h-9 items-center gap-2 rounded-md border border-text/15 bg-panel px-3 text-muted">
               <Search size={15} />
               <input
@@ -262,6 +262,8 @@ export function GroveNav() {
               </div>
             ) : null}
           </div>
+
+          <div className="ml-auto" />
 
           <div ref={notifMenuRef} className="relative">
             <button

@@ -61,6 +61,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         username: profile.username,
         displayName: profile.displayName,
         xHandle: profile.xHandle,
+        bio: profile.bio,
         avatarUrl: profile.avatarUrl ?? `${origin}/avatars/${profile.avatar}.png`,
         karma: profile.karma,
         upvotes: profile.upvotes,

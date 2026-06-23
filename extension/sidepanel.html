@@ -65,10 +65,22 @@
             <div id="viewingMeta" class="viewing-meta">@handle · 0 karma</div>
           </div>
         </div>
-        <button id="viewingTipBtn" type="button" class="profile-cta">Tip ↗</button>
-        <div class="karma-actions">
-          <button id="viewingUpBtn" type="button">Give Karma</button>
-          <button id="viewingDownBtn" type="button">Slash Karma</button>
+        <div id="viewingBio" class="viewing-bio hidden"></div>
+        <div id="viewingStats" class="viewing-stats hidden">
+          <span><strong id="viewingUp">0</strong> up</span>
+          <span><strong id="viewingDown">0</strong> down</span>
+        </div>
+        <div class="viewing-actions">
+          <button id="viewingTipBtn" type="button" class="profile-cta">Tip</button>
+          <button id="viewingProfileBtn" type="button" class="profile-cta">Profile ↗</button>
+        </div>
+        <div class="karma-actions hidden">
+          <button id="viewingUpBtn" type="button">+1 Karma</button>
+          <button id="viewingDownBtn" type="button">-1 Karma</button>
+        </div>
+        <div id="viewingActivity" class="viewing-activity hidden">
+          <div class="panel-title-sm">Recent activity</div>
+          <div id="viewingActivityList"></div>
         </div>
       </section>
 

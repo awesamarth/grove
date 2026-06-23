@@ -4,13 +4,14 @@
   "version": "0.0.1",
   "description": "Grove sidebar companion for MOSS wallets.",
   "minimum_chrome_version": "116",
-  "permissions": ["sidePanel", "storage", "identity"],
+  "permissions": ["sidePanel", "storage", "identity", "clipboardRead", "clipboardWrite"],
   "host_permissions": [
     "https://localhost:3000/*",
     "https://grove-samarth-saxenas-projects.vercel.app/*",
     "https://ongrove.network/*",
     "https://x.com/*",
-    "https://twitter.com/*"
+    "https://twitter.com/*",
+    "https://euphoria.finance/*"
   ],
   "content_scripts": [
     {
@@ -18,12 +19,21 @@
       "js": ["dist/content.js"],
       "css": ["dist/content.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://euphoria.finance/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": ["grove-logo.png"],
       "matches": ["https://x.com/*", "https://twitter.com/*"]
+    },
+    {
+      "resources": ["dist/html2canvas.min.js", "dist/euphoria-capture-bridge.js", "grove-logo.png", "grove-logo-new.png"],
+      "matches": ["https://euphoria.finance/*"]
     }
   ],
   "action": {
