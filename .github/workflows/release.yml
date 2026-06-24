@@ -1,0 +1,51 @@
+name: Extension Release
+
+on:
+  push:
+    tags:
+      - "extension-v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run build
+
+      - name: Package extension
+        run: |
+          mkdir -p _dist
+          cp manifest.json _dist/
+          cp sidepanel.html _dist/
+          cp grove-logo*.png _dist/ 2>/dev/null || true
+          cp -r dist _dist/
+          cd _dist
+          zip -r ../grove-extension.zip .
+          cd ..
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Grove Extension ${{ github.ref_name }}
+          body: |
+            ## Grove Extension ${{ github.ref_name }}
+
+            ### Install
+            1. Download `grove-extension.zip`
+            2. Extract it somewhere
+            3. Open `chrome://extensions`
+            4. Enable **Developer mode** (top right)
+            5. Click **Load unpacked**
+            6. Select the extracted folder
+
+            ### Changelog
+          files: extension/grove-extension.zip

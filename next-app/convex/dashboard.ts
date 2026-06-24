@@ -714,3 +714,38 @@ export const wipeWalletForTesting = mutation({
     };
   },
 });
+
+export const getOptedInWallets = query({
+  args: {},
+  handler: async (ctx) => {
+    const profiles = await ctx.db.query("profiles").collect();
+    return profiles
+      .filter((p) => p.privacy === "public" || p.activitySharing === "public")
+      .map((p) => ({ walletAddress: p.walletAddress }));
+  },
+});
+
+export const insertIndexedActivity = mutation({
+  args: {
+    walletAddress: v.string(),
+    appName: v.string(),
+    txHash: v.string(),
+    blockNumber: v.number(),
+    body: v.string(),
+    tone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("activities", {
+      actorWallet: args.walletAddress,
+      kind: "app",
+      appName: args.appName,
+      body: args.body,
+      detail: JSON.stringify({ txHash: args.txHash, blockNumber: args.blockNumber }),
+      visibility: "public",
+      tone: args.tone as "success" | "primary",
+      reactions: 0,
+      happenedAt: Date.now(),
+      createdAt: Date.now(),
+    });
+  },
+});
