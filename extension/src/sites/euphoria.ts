@@ -52,7 +52,7 @@ function renderShareButton(btn: HTMLButtonElement) {
   btn.innerHTML = `
     <span style="display:inline-flex;align-items:center;justify-content:center;gap:7px;line-height:1">
       <img src="${logoUrl}" alt="" style="width:16px;height:16px;display:block;flex:none;object-fit:contain">
-      <span style="display:block;line-height:1;transform:translateY(-2px)">Share on Grove</span>
+      <span style="display:block;line-height:1;transform:translateY(-1px)">Share on Grove</span>
     </span>
   `;
 }

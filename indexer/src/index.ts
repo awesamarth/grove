@@ -3,6 +3,9 @@ import { GROVE_ORIGIN, INDEXER_SECRET, MEGAETH_WS, matchContract } from "./confi
 const headers: Record<string, string> = { "content-type": "application/json" };
 if (INDEXER_SECRET) headers.authorization = `Bearer ${INDEXER_SECRET}`;
 
+let knownWallets = new Set<string>();
+let seen = new Set<string>();
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${GROVE_ORIGIN}${path}`, {
     ...init,
@@ -17,7 +20,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function fetchKnownWallets(): Promise<Set<string>> {
   const wallets = await api<{ walletAddress: string }[]>("/api/indexer/wallets");
-  return new Set(wallets.map((w) => w.walletAddress.toLowerCase()));
+  const set = new Set(wallets.map((w) => w.walletAddress.toLowerCase()));
+  // hardcoded test wallet
+  set.add("0x01c46e8bfc7843aca8c065dc76f71c0ec1e51eed");
+  return set;
 }
 
 async function recordActivity(body: {
@@ -34,23 +40,28 @@ async function recordActivity(body: {
   });
 }
 
-async function start() {
+async function refreshWallets() {
+  try {
+    knownWallets = await fetchKnownWallets();
+    console.log(`[indexer] refreshed wallets: ${knownWallets.size} known`);
+  } catch (err) {
+    console.error("[indexer] wallet refresh failed:", err);
+  }
+}
+
+async function connect() {
   console.log("[indexer] connecting to MegaETH WS...");
 
-  let knownWallets = await fetchKnownWallets();
-  const seen = new Set<string>();
+  await refreshWallets();
   console.log(`[indexer] loaded ${knownWallets.size} known wallets`);
 
-  setInterval(async () => {
-    try {
-      knownWallets = await fetchKnownWallets();
-      console.log(`[indexer] refreshed wallets: ${knownWallets.size} known`);
-    } catch (err) {
-      console.error("[indexer] wallet refresh failed:", err);
-    }
-  }, 300_000);
-
   const ws = new WebSocket(MEGAETH_WS);
+  let miniBlockCount = 0;
+
+  const walletRefreshTimer = setInterval(refreshWallets, 60_000);
+  const keepaliveTimer = setInterval(() => {
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "eth_chainId" }));
+  }, 25_000);
 
   ws.onopen = () => {
     console.log("[indexer] WS connected, subscribing to miniBlocks...");
@@ -61,8 +72,6 @@ async function start() {
       params: ["miniBlocks"],
     }));
   };
-
-  let miniBlockCount = 0;
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
@@ -78,7 +87,13 @@ async function start() {
     for (let i = 0; i < block.transactions.length; i++) {
       const tx = block.transactions[i];
       const from = (tx.from ?? "").toLowerCase();
-      if (!knownWallets.has(from)) continue;
+      const isTestWallet = from === "0x01c46e8bfc7843aca8c065dc76f71c0ec1e51eed";
+      if (!knownWallets.has(from)) {
+        if (isTestWallet) {
+          console.log(`[indexer] DEBUG: test wallet tx to=${tx.to} hash=${tx.hash} input=${(tx.input ?? "").slice(0, 60)}`);
+        }
+        continue;
+      }
 
       const to = (tx.to ?? "").toLowerCase();
       const contract = matchContract(to);
@@ -110,19 +125,16 @@ async function start() {
   };
 
   ws.onclose = () => {
+    clearInterval(walletRefreshTimer);
+    clearInterval(keepaliveTimer);
     console.log("[indexer] WS closed, reconnecting in 5s...");
-    setTimeout(start, 5000);
+    setTimeout(connect, 5000);
   };
-
-  // keepalive: eth_chainId every 25s
-  setInterval(() => {
-    ws.send(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "eth_chainId" }));
-  }, 25_000);
 
   console.log("[indexer] watching for onchain activity...");
 }
 
-start().catch((err) => {
+connect().catch((err) => {
   console.error("[indexer] fatal:", err);
   process.exit(1);
 });

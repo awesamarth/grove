@@ -1,6 +1,6 @@
 const CONTRACTS = {
   euphoria: {
-    address: "0xdf8248fee58e791149e69f6c61129D471EaFC11E",
+    address: "0x12759afcA690637b425ffbA3265F0Dc2F6242A8D",
     name: "Euphoria",
     body: "Traded on Euphoria",
     color: "success",
