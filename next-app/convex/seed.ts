@@ -87,53 +87,6 @@ const profiles = [
   },
 ];
 
-const activities = [
-  {
-    actorWallet: profiles[0].walletAddress,
-    kind: "game" as const,
-    appName: "Hit.One",
-    body: "hit a 50x leverage slot spin on Hit.One",
-    detail: "0.05 ETH · testnet",
-    visibility: "public" as const,
-    tone: "success" as const,
-    reactions: 18,
-    offsetMs: 2 * 60 * 1000,
-  },
-  {
-    actorWallet: profiles[1].walletAddress,
-    kind: "tip" as const,
-    appName: "Grove",
-    body: "tipped Juno for shipping a new community tool",
-    detail: "8.00 USDM",
-    visibility: "public" as const,
-    tone: "primary" as const,
-    reactions: 31,
-    offsetMs: 11 * 60 * 1000,
-  },
-  {
-    actorWallet: profiles[2].walletAddress,
-    kind: "mint" as const,
-    appName: "Euphoria",
-    body: "opened a tap-to-trade position on Euphoria",
-    detail: "first trade · testnet",
-    visibility: "public" as const,
-    tone: "warning" as const,
-    reactions: 9,
-    offsetMs: 28 * 60 * 1000,
-  },
-  {
-    actorWallet: profiles[3].walletAddress,
-    kind: "app" as const,
-    appName: "Cap",
-    body: "deposited into Cap for insured yield",
-    detail: "100 USDM · principal protected",
-    visibility: "public" as const,
-    tone: "dark" as const,
-    reactions: 6,
-    offsetMs: 44 * 60 * 1000,
-  },
-];
-
 export const initialise = mutation({
   args: {},
   handler: async (ctx) => {
@@ -143,28 +96,7 @@ export const initialise = mutation({
       .withIndex("by_walletAddress", (q) => q.eq("walletAddress", profiles[0].walletAddress))
       .unique();
 
-    if (existing) {
-      for (const activity of activities) {
-        const happenedAt = now - activity.offsetMs;
-        const matching = await ctx.db
-          .query("activities")
-          .withIndex("by_actorWallet_and_happenedAt", (q) =>
-            q.eq("actorWallet", activity.actorWallet),
-          )
-          .take(10);
-        const current = matching.find((item) => item.kind === activity.kind);
-
-        if (current) {
-          await ctx.db.patch(current._id, {
-            body: activity.body,
-            detail: activity.detail,
-            reactions: activity.reactions,
-            happenedAt,
-          });
-        }
-      }
-      return { seeded: false };
-    }
+    if (existing) return { seeded: false };
 
     for (const profile of profiles) {
       await ctx.db.insert("profiles", {
@@ -173,22 +105,6 @@ export const initialise = mutation({
         onboardingComplete: true,
         createdAt: now,
         updatedAt: now,
-      });
-    }
-
-    for (const activity of activities) {
-      const happenedAt = now - activity.offsetMs;
-      await ctx.db.insert("activities", {
-        actorWallet: activity.actorWallet,
-        kind: activity.kind,
-        appName: activity.appName,
-        body: activity.body,
-        detail: activity.detail,
-        visibility: activity.visibility,
-        tone: activity.tone,
-        reactions: activity.reactions,
-        happenedAt,
-        createdAt: happenedAt,
       });
     }
 

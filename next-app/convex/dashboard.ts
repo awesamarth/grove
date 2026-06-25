@@ -725,6 +725,27 @@ export const getOptedInWallets = query({
   },
 });
 
+export const clearSeededActivities = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const bodies = [
+      "hit a 50x leverage slot spin on Hit.One",
+      "tipped Juno for shipping a new community tool",
+      "opened a tap-to-trade position on Euphoria",
+      "deposited into Cap for insured yield",
+    ];
+    const activities = await ctx.db.query("activities").collect();
+    let count = 0;
+    for (const a of activities) {
+      if (bodies.includes(a.body)) {
+        await ctx.db.delete(a._id);
+        count++;
+      }
+    }
+    return { deleted: count };
+  },
+});
+
 export const insertIndexedActivity = mutation({
   args: {
     walletAddress: v.string(),
