@@ -770,3 +770,19 @@ export const insertIndexedActivity = mutation({
     });
   },
 });
+
+export const deleteActivity = mutation({
+  args: { activityId: v.id("activities") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) throw new Error("Activity not found");
+
+    const wallet = normalizeWallet(identity.subject);
+    if (activity.actorWallet !== wallet) throw new Error("Not the activity owner");
+
+    await ctx.db.delete(args.activityId);
+  },
+});

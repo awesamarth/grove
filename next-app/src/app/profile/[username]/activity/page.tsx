@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowUpRight, ChevronLeft, Loader2 } from "lucide-react";
-import { useQuery } from "convex/react";
+import { ArrowUpRight, ChevronLeft, Loader2, Trash2 } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -9,11 +9,15 @@ import { api } from "../../../../../convex/_generated/api";
 import { GroveNav } from "../../../../components/grove-nav";
 import { ProfileAvatar } from "../../../../components/profile-avatar";
 import { ActivityDetail, activityBodyText } from "../../../../components/activity-detail";
+import { useGroveSession } from "../../../../lib/use-grove-session";
 
 export default function ProfileActivityPage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
+  const groveSession = useGroveSession();
+  const viewerWallet = groveSession.walletAddress ?? undefined;
   const data = useQuery(api.dashboard.getProfileActivities, { username });
+  const deleteActivity = useMutation(api.dashboard.deleteActivity);
   const [renderedAt] = useState(() => Date.now());
 
   function minutesAgo(happenedAt: number) {
@@ -70,7 +74,19 @@ export default function ProfileActivityPage() {
                         {minutesAgo(activity.happenedAt)}m
                       </span>
                     </div>
-                    <div className="mt-3"><ActivityDetail detail={activity.detail} /></div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <ActivityDetail detail={activity.detail} />
+                      {activity.actorWallet?.toLowerCase() === viewerWallet?.toLowerCase() ? (
+                        <button
+                          type="button"
+                          onClick={() => void deleteActivity({ activityId: activity._id })}
+                          className="ml-auto flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-red-500"
+                          aria-label="Delete activity"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))
               ) : (

@@ -8,6 +8,7 @@ import {
   Heart,
   Sparkles,
   Sprout,
+  Trash2,
   Trophy,
   Upload,
   UserPlus,
@@ -88,6 +89,7 @@ export default function Home() {
   const setFollow = useMutation(api.social.setFollow);
   const vote = useMutation(api.social.vote);
   const toggleActivityLike = useMutation(api.social.toggleActivityLike);
+  const deleteActivity = useMutation(api.dashboard.deleteActivity);
   const [authPending, setAuthPending] = useState(false);
   const [authState, setAuthState] = useState<"idle" | "success" | "error">("idle");
   const [authError, setAuthError] = useState<string>();
@@ -528,22 +530,34 @@ export default function Home() {
 
                     <div className="mt-3 flex items-end gap-2">
                       <ActivityDetail detail={activity.detail} />
-                      <button
-                        type="button"
-                        onClick={() => void likeActivity(activity._id)}
-                        aria-pressed={likedByViewer}
-                        className={`ml-auto flex items-center gap-1.5 text-xs transition-colors ${
-                          likedByViewer
-                            ? "text-primary hover:text-primary"
-                            : "text-muted hover:text-primary"
-                        }`}
-                      >
-                        <Heart
-                          size={14}
-                          fill={likedByViewer ? "currentColor" : "none"}
-                        />{" "}
-                        {reactions}
-                      </button>
+                      <div className="ml-auto flex items-center gap-1">
+                        {viewerWallet?.toLowerCase() === activity.actorWallet?.toLowerCase() ? (
+                          <button
+                            type="button"
+                            onClick={() => void deleteActivity({ activityId: activity._id })}
+                            className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-red-500"
+                            aria-label="Delete activity"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void likeActivity(activity._id)}
+                          aria-pressed={likedByViewer}
+                          className={`flex items-center gap-1.5 text-xs transition-colors ${
+                            likedByViewer
+                              ? "text-primary hover:text-primary"
+                              : "text-muted hover:text-primary"
+                          }`}
+                        >
+                          <Heart
+                            size={14}
+                            fill={likedByViewer ? "currentColor" : "none"}
+                          />{" "}
+                          {reactions}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </article>

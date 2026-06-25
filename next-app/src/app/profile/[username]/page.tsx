@@ -11,6 +11,7 @@ import {
   Sprout,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Upload,
   UserPlus,
   WalletCards,
@@ -61,6 +62,7 @@ export default function ProfilePage() {
   const vote = useMutation(api.social.vote);
   const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
   const updateProfile = useMutation(api.dashboard.updateProfile);
+  const deleteActivity = useMutation(api.dashboard.deleteActivity);
   const [message, setMessage] = useState<string>();
   const [addressCopied, setAddressCopied] = useState(false);
   const [profileCopied, setProfileCopied] = useState(false);
@@ -409,7 +411,19 @@ export default function ProfilePage() {
                           {minutesAgo(activity.happenedAt)}m
                         </span>
                       </div>
-                      <div className="mt-3"><ActivityDetail detail={activity.detail} /></div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <ActivityDetail detail={activity.detail} />
+                        {activity.actorWallet?.toLowerCase() === viewerWallet?.toLowerCase() ? (
+                          <button
+                            type="button"
+                            onClick={() => void deleteActivity({ activityId: activity._id })}
+                            className="ml-auto flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-red-500"
+                            aria-label="Delete activity"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : null}
+                      </div>
                     </article>
                   ))
                 ) : (
