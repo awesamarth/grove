@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Share2,
   Sprout,
@@ -20,13 +21,14 @@ import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { type FormEvent, type KeyboardEvent, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { GroveNav } from "../../../components/grove-nav";
 import { ProfileAvatar } from "../../../components/profile-avatar";
 import { ActivityDetail, activityBodyText } from "../../../components/activity-detail";
 import { useGroveSession } from "../../../lib/use-grove-session";
+import { timeAgo } from "../../../lib/time";
 
 const avatarChoices = ["niko", "mira", "raihan", "juno", "kai", "alba"];
 
@@ -74,14 +76,23 @@ export default function ProfilePage() {
   const [editAvatarPreviewUrl, setEditAvatarPreviewUrl] = useState<string | null>();
   const [editPending, setEditPending] = useState(false);
   const [uploadPending, setUploadPending] = useState(false);
-  const [renderedAt] = useState(() => Date.now());
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!menuOpenId) return;
+    function close(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (!target.closest("[data-menu-button]") && !target.closest("[data-menu-dropdown]")) {
+        setMenuOpenId(null);
+      }
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpenId]);
+
   const isSelf =
     Boolean(viewerWallet && profileData?.profile) &&
     viewerWallet?.toLowerCase() === profileData?.profile.walletAddress.toLowerCase();
-
-  function minutesAgo(happenedAt: number) {
-    return Math.max(1, Math.round((renderedAt - happenedAt) / 60_000));
-  }
 
   async function toggleFollow() {
     if (!profileData?.profile) return;
@@ -405,24 +416,45 @@ export default function ProfilePage() {
                 {profileData.recentActivities.length ? (
                   profileData.recentActivities.map((activity) => (
                     <article key={activity._id} className="border-b border-border p-4 last:border-b-0 sm:p-5">
-                      <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start justify-between gap-2">
                         <p className="text-[15px] leading-6">{activityBodyText(activity.body, activity.detail)}</p>
-                        <span className="font-mono text-[11px] text-muted">
-                          {minutesAgo(activity.happenedAt)}m
-                        </span>
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            data-menu-button
+                            onClick={() => setMenuOpenId(menuOpenId === activity._id ? null : activity._id)}
+                            className="grid size-7 place-items-center rounded-md text-muted transition-colors hover:bg-panel-hover hover:text-text"
+                            aria-label="More actions"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                          {menuOpenId === activity._id ? (
+                            <div
+                              data-menu-dropdown
+                              className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-lg border border-text/15 bg-panel py-1 shadow-lg"
+                            >
+                              {activity.actorWallet?.toLowerCase() === viewerWallet?.toLowerCase() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMenuOpenId(null);
+                                    void deleteActivity({ activityId: activity._id });
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-500 transition-colors hover:bg-red-50"
+                                >
+                                  <Trash2 size={14} />
+                                  Delete
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="mt-3 flex items-center gap-2">
                         <ActivityDetail detail={activity.detail} />
-                        {activity.actorWallet?.toLowerCase() === viewerWallet?.toLowerCase() ? (
-                          <button
-                            type="button"
-                            onClick={() => void deleteActivity({ activityId: activity._id })}
-                            className="ml-auto flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-red-500"
-                            aria-label="Delete activity"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        ) : null}
+                        <span className="ml-auto font-mono text-[11px] text-muted/60">
+                          {timeAgo(activity.happenedAt)}
+                        </span>
                       </div>
                     </article>
                   ))

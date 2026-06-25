@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Gamepad2,
   Heart,
+  MoreHorizontal,
   Sparkles,
   Sprout,
   Trash2,
@@ -26,6 +27,7 @@ import { ProfileAvatar } from "../components/profile-avatar";
 import { ActivityDetail, activityBodyText } from "../components/activity-detail";
 import { useXConnect } from "../components/x-connect-modal";
 import { notifyGroveSessionChanged, useGroveSession } from "../lib/use-grove-session";
+import { timeAgo } from "../lib/time";
 
 const avatarChoices = ["niko", "mira", "raihan", "juno", "kai", "alba"];
 
@@ -98,6 +100,7 @@ export default function Home() {
   const [optimisticActivityLikes, setOptimisticActivityLikes] = useState<
     Record<string, { liked: boolean; reactions: number }>
   >({});
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingBio, setOnboardingBio] = useState("");
   const [onboardingAvatar, setOnboardingAvatar] = useState("niko");
@@ -149,6 +152,18 @@ export default function Home() {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onboardingOpen]);
+
+  useEffect(() => {
+    if (!menuOpenId) return;
+    function close(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (!target.closest("[data-menu-button]") && !target.closest("[data-menu-dropdown]")) {
+        setMenuOpenId(null);
+      }
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpenId]);
 
   async function signIn() {
     setAuthPending(true);
@@ -502,14 +517,14 @@ export default function Home() {
               const likedByViewer = optimisticLike?.liked ?? activity.likedByViewer;
               const reactions = optimisticLike?.reactions ?? activity.reactions;
               return (
-                <article key={activity._id} className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border p-4 last:border-b-0 sm:p-5">
+              <article key={activity._id} className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border p-4 last:border-b-0 sm:p-5">
                   {actor ? (
                     <Avatar user={actor.avatar} avatarUrl={actor.avatarUrl} label={actor.displayName} />
                   ) : (
                     <Avatar user="niko" label="Unknown" />
                   )}
                   <div className="min-w-0">
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm">
                           {actor ? (
@@ -522,42 +537,64 @@ export default function Home() {
                           <span className="text-muted">
                             {actor?.xHandle ? `@${actor.xHandle}` : actor?.username}
                           </span>
+                          <span className="ml-1.5 font-mono text-[11px] text-muted/60">
+                            · {timeAgo(activity.happenedAt)}
+                          </span>
                         </p>
-                        <p className="mt-2 text-[15px] leading-6 text-text">{activityBodyText(activity.body, activity.detail)}</p>
                       </div>
-                      <span className="shrink-0 font-mono text-[11px] text-muted">{activity.time}</span>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          data-menu-button
+                          onClick={() => setMenuOpenId(menuOpenId === activity._id ? null : activity._id)}
+                          className="grid size-7 place-items-center rounded-md text-muted transition-colors hover:bg-panel-hover hover:text-text"
+                          aria-label="More actions"
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
+                        {menuOpenId === activity._id ? (
+                          <div
+                            data-menu-dropdown
+                            className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-lg border border-text/15 bg-panel py-1 shadow-lg"
+                          >
+                            {viewerWallet?.toLowerCase() === activity.actorWallet?.toLowerCase() ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  void deleteActivity({ activityId: activity._id });
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-500 transition-colors hover:bg-red-50"
+                              >
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
+
+                    <p className="mt-1 text-[15px] leading-6 text-text">{activityBodyText(activity.body, activity.detail)}</p>
 
                     <div className="mt-3 flex items-end gap-2">
                       <ActivityDetail detail={activity.detail} />
-                      <div className="ml-auto flex items-center gap-1">
-                        {viewerWallet?.toLowerCase() === activity.actorWallet?.toLowerCase() ? (
-                          <button
-                            type="button"
-                            onClick={() => void deleteActivity({ activityId: activity._id })}
-                            className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-red-500"
-                            aria-label="Delete activity"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void likeActivity(activity._id)}
-                          aria-pressed={likedByViewer}
-                          className={`flex items-center gap-1.5 text-xs transition-colors ${
-                            likedByViewer
-                              ? "text-primary hover:text-primary"
-                              : "text-muted hover:text-primary"
-                          }`}
-                        >
-                          <Heart
-                            size={14}
-                            fill={likedByViewer ? "currentColor" : "none"}
-                          />{" "}
-                          {reactions}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void likeActivity(activity._id)}
+                        aria-pressed={likedByViewer}
+                        className={`ml-auto flex items-center gap-1.5 text-xs transition-colors ${
+                          likedByViewer
+                            ? "text-primary hover:text-primary"
+                            : "text-muted hover:text-primary"
+                        }`}
+                      >
+                        <Heart
+                          size={14}
+                          fill={likedByViewer ? "currentColor" : "none"}
+                        />{" "}
+                        {reactions}
+                      </button>
                     </div>
                   </div>
                 </article>
