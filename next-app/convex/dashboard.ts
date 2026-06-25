@@ -756,12 +756,21 @@ export const insertIndexedActivity = mutation({
     tone: v.string(),
   },
   handler: async (ctx, args) => {
+    const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+    const recent = await ctx.db
+      .query("activities")
+      .withIndex("by_actorWallet_and_happenedAt", (q) =>
+        q.eq("actorWallet", args.walletAddress).gte("happenedAt", thirtyMinAgo)
+      )
+      .first();
+    if (recent) return;
+
     await ctx.db.insert("activities", {
       actorWallet: args.walletAddress,
       kind: "app",
       appName: args.appName,
       body: args.body,
-      detail: JSON.stringify({ txHash: args.txHash, blockNumber: args.blockNumber }),
+      detail: "",
       visibility: "public",
       tone: args.tone as "success" | "primary",
       reactions: 0,

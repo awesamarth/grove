@@ -1,8 +1,8 @@
-const CONTRACTS = {
+export const CONTRACTS = {
   euphoria: {
     address: "0x12759afcA690637b425ffbA3265F0Dc2F6242A8D",
     name: "Euphoria",
-    body: "Traded on Euphoria",
+    body: "tap traded on Euphoria",
     color: "success",
   },
   topstrike: {

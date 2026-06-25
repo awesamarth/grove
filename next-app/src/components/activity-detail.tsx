@@ -25,6 +25,8 @@ function cleanAsset(asset?: string | null) {
   return value;
 }
 
+
+
 export function activityBodyText(body: string, detail?: string | null) {
   const parsed = parseDetail(detail);
   if (!parsed) return body;
@@ -32,6 +34,7 @@ export function activityBodyText(body: string, detail?: string | null) {
 }
 
 export function ActivityDetail({ detail }: { detail?: string | null }) {
+  if (!detail) return null;
   const parsed = parseDetail(detail);
   const [expanded, setExpanded] = useState(false);
 
