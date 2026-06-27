@@ -7,7 +7,6 @@ export default function PromoTilePage() {
         id="tile"
         className="flex flex-col items-center justify-center overflow-hidden"
         style={{ width: 440, height: 280, background: "#0f0f0f" }}
-        style={{ width: 440, height: 280, background: "#0f0f0f" }}
       >
         <div className="flex flex-col items-center gap-2">
           <div className="flex items-center gap-4">
