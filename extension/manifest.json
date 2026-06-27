@@ -9,6 +9,7 @@
     "https://localhost:3000/*",
     "https://grove-samarth-saxenas-projects.vercel.app/*",
     "https://ongrove.network/*",
+    "https://www.ongrove.network/*",
     "https://x.com/*",
     "https://twitter.com/*",
     "https://euphoria.finance/*"
@@ -47,6 +48,6 @@
     "default_path": "sidepanel.html"
   },
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self' https://localhost:3000 https://grove-samarth-saxenas-projects.vercel.app https://ongrove.network; object-src 'none';"
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self' https://localhost:3000 https://grove-samarth-saxenas-projects.vercel.app https://ongrove.network https://www.ongrove.network; object-src 'none';"
   }
 }
