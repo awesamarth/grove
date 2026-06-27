@@ -1,4 +1,4 @@
-const GROVE_ORIGIN = "https://localhost:3000";
+import { GROVE_ORIGIN } from "./lib/origin";
 
 type StoredSession = {
   token: string;

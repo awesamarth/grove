@@ -3,7 +3,7 @@
 import { Check, Loader2, X } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { notifyGroveSessionChanged, useGroveSession } from "@/lib/use-grove-session";
 
 type AuthChallenge = {
@@ -33,6 +33,10 @@ function redirectWithSession(redirectUri: string, token: string, walletAddress: 
 }
 
 export default function ExtensionConnectPage() {
+  return <Suspense fallback={null}><ConnectContent /></Suspense>;
+}
+
+function ConnectContent() {
   const params = useSearchParams();
   const redirectUri = params.get("redirect_uri");
   const { status, address } = useStatus();

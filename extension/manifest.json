@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Grove MOSS Test",
+  "name": "Grove",
   "version": "0.0.1",
   "description": "Grove sidebar companion for MOSS wallets.",
   "minimum_chrome_version": "116",

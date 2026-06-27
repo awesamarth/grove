@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
+import { ActivityDetail } from "../../../components/activity-detail";
 import { GroveNav } from "../../../components/grove-nav";
 import { ProfileAvatar } from "../../../components/profile-avatar";
 import { useGroveSession } from "../../../lib/use-grove-session";
@@ -172,7 +173,7 @@ export default function TipPage() {
                       data.recentActivities.map((activity) => (
                         <div key={activity._id} className="rounded-md border border-border bg-background p-3">
                           <p className="text-sm">{activity.body}</p>
-                          <p className="mt-1 font-mono text-[11px] text-primary">{activity.detail}</p>
+                          <div className="mt-2"><ActivityDetail detail={activity.detail} /></div>
                         </div>
                       ))
                     ) : (

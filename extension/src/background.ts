@@ -1,9 +1,10 @@
+import { GROVE_ORIGIN } from "./lib/origin";
+
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 
 const tabViews = new Map<number, string | null>();
-const GROVE_ORIGIN = "https://localhost:3000";
 
 async function responseError(response: Response) {
   const text = await response.text();

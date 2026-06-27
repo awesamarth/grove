@@ -1,4 +1,4 @@
-export const GROVE_ORIGIN = "https://localhost:3000";
+export { GROVE_ORIGIN } from "./origin";
 
 export interface GroveProfile {
   username: string;
