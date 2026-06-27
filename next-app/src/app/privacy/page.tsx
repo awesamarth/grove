@@ -124,12 +124,12 @@ export default function PrivacyPage() {
           <p>
             For questions about this policy, data deletion requests, or support, reach out via X at{" "}
             <a
-              href="https://x.com/ongrove"
+              href="https://x.com/ongrove_network"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-primary hover:underline"
             >
-              @ongrove <ExternalLink size={12} />
+              @ongrove_network <ExternalLink size={12} />
             </a>{" "}
             or open an issue on{" "}
             <a
