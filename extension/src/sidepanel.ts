@@ -245,7 +245,7 @@ function renderMe(data: ExtensionMe) {
         <small>${formatAge(notification.createdAt)}</small>
       </div>
     `).join("")
-    : `<div class="empty">No notifications yet.</div>`;
+    : `<div class="empty">No notifications.</div>`;
 
   document.querySelectorAll<HTMLElement>("[data-url]").forEach((item) => {
     item.addEventListener("click", () => {

@@ -36,6 +36,7 @@ export const setFollow = mutation({
     const follower = await getProfileByWallet(ctx, followerWallet);
     const target = await getProfileByWallet(ctx, targetWallet);
     if (!follower || !target) throw new Error("Both profiles must exist.");
+    if (target.privacy !== "public") throw new Error("This profile is not public.");
 
     const existing = await ctx.db
       .query("follows")
@@ -80,6 +81,7 @@ export const vote = mutation({
     const voter = await getProfileByWallet(ctx, voterWallet);
     const target = await getProfileByWallet(ctx, targetWallet);
     if (!voter || !target) throw new Error("Both profiles must exist.");
+    if (target.privacy !== "public") throw new Error("This profile is not public.");
 
     const existing = await ctx.db
       .query("karmaVotes")
@@ -135,6 +137,15 @@ export const toggleActivityLike = mutation({
 
     const activity = await ctx.db.get(args.activityId);
     if (!activity) throw new Error("Activity not found.");
+    const actor = await getProfileByWallet(ctx, activity.actorWallet);
+    if (
+      !actor ||
+      actor.privacy !== "public" ||
+      actor.activitySharing !== "public" ||
+      activity.visibility !== "public"
+    ) {
+      throw new Error("Activity is not public.");
+    }
 
     const existing = await ctx.db
       .query("activityLikes")
@@ -170,6 +181,7 @@ export const createTipIntent = mutation({
     const from = await getProfileByWallet(ctx, fromWallet);
     const to = await getProfileByWallet(ctx, toWallet);
     if (!from || !to) throw new Error("Both profiles must exist.");
+    if (to.privacy !== "public") throw new Error("This profile is not public.");
 
     const now = Date.now();
     return await ctx.db.insert("tipIntents", {

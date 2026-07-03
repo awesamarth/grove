@@ -48,6 +48,29 @@ function testToolsEnabled() {
   return process.env.GROVE_ENABLE_TEST_TOOLS === "true";
 }
 
+function requireIndexerSecret(secret: string) {
+  const expected = process.env.INDEXER_SECRET;
+  if (!expected || secret !== expected) {
+    throw new Error("Unauthorized indexer request.");
+  }
+}
+
+function publicProfile(profile: Doc<"profiles">) {
+  return {
+    walletAddress: profile.walletAddress,
+    username: profile.username,
+    handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
+    displayName: profile.displayName,
+    xHandle: profile.xHandle ?? null,
+    xVerified: profile.xVerified,
+    bio: profile.bio,
+    avatar: profile.avatar,
+    karma: profile.karma,
+    upvotes: profile.upvotes,
+    downvotes: profile.downvotes,
+  };
+}
+
 async function getProfileByWallet(ctx: QueryCtx | MutationCtx, walletAddress: string) {
   return await ctx.db
     .query("profiles")
@@ -128,16 +151,19 @@ export const getDashboard = query({
   args: {
     viewerWallet: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, _args) => {
     const identity = await ctx.auth.getUserIdentity();
     const viewerWallet = identity ? normalizeWallet(identity.subject) : undefined;
     const viewer = viewerWallet ? await getProfileByWallet(ctx, viewerWallet) : null;
 
-    const publicProfiles = await ctx.db
-      .query("profiles")
-      .withIndex("by_privacy_and_karma", (q) => q.eq("privacy", "public"))
-      .order("desc")
-      .take(12);
+    const allProfiles = await ctx.db.query("profiles").collect();
+    const publicProfiles = allProfiles
+      .filter((p) => !p.privacy || p.privacy === "public");
+    publicProfiles.sort((a, b) => {
+      const aKey = a.karma ^ parseInt(a.walletAddress.slice(-4), 16);
+      const bKey = b.karma ^ parseInt(b.walletAddress.slice(-4), 16);
+      return bKey - aKey;
+    });
 
     const activities = await ctx.db
       .query("activities")
@@ -204,16 +230,24 @@ export const getDashboard = query({
         : null,
       feed,
       people: await Promise.all(publicProfiles
-        .filter((profile) => profile.walletAddress !== viewerWallet)
+        .filter((p) => p.walletAddress !== viewerWallet && !followedWallets.has(p.walletAddress))
         .slice(0, 5)
-        .map(async (profile) => ({
-          ...profile,
-          avatarUrl: await avatarUrl(ctx, profile),
-          onboardingComplete: profileIsComplete(profile),
-          handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
-          isFollowed: followedWallets.has(profile.walletAddress),
-          mutuals: Math.max(2, Math.round(profile.karma / 7)),
-        }))),
+        .map(async (profile) => {
+          const mutualFollows = followedWallets.size > 0
+            ? await ctx.db
+                .query("follows")
+                .withIndex("by_targetWallet", (q) => q.eq("targetWallet", profile.walletAddress))
+                .collect()
+            : [];
+          const mutuals = mutualFollows.filter((f) => followedWallets.has(f.followerWallet)).length;
+          return {
+            ...publicProfile(profile),
+            avatarUrl: await avatarUrl(ctx, profile),
+            onboardingComplete: profileIsComplete(profile),
+            isFollowed: false,
+            mutuals,
+          };
+        })),
       stats: {
         people: publicProfiles.length,
         activities: activities.length,
@@ -231,18 +265,12 @@ export const searchProfiles = query({
     const queryText = args.query.trim().toLowerCase();
     if (queryText.length < 2) return [];
 
-    const displayNameResults = await ctx.db
-      .query("profiles")
-      .withSearchIndex("search_displayName", (q) =>
-        q.search("displayName", queryText).eq("privacy", "public"),
-      )
-      .take(6);
+    const allProfiles = await ctx.db.query("profiles").collect();
+    const publicProfiles = allProfiles.filter((p) => !p.privacy || p.privacy === "public");
 
-    const publicProfiles = await ctx.db
-      .query("profiles")
-      .withIndex("by_privacy_and_karma", (q) => q.eq("privacy", "public"))
-      .order("desc")
-      .take(50);
+    const displayNameResults = publicProfiles
+      .filter((p) => p.displayName.toLowerCase().includes(queryText))
+      .slice(0, 6);
 
     const results = new Map(
       displayNameResults.map((profile) => [profile.walletAddress, profile]),
@@ -387,10 +415,11 @@ export const getProfileByUsername = query({
 
     return {
       profile: {
-        ...profile,
+        ...publicProfile(profile),
         avatarUrl: await avatarUrl(ctx, profile),
         onboardingComplete: profileIsComplete(profile),
-        handleKind: profile.handleKind ?? (profile.xVerified ? "x" : "generated"),
+        activitySharing: profile.activitySharing,
+        privacy: profile.privacy,
       },
       isFollowed: Boolean(follow),
       followerCount: followers.length,
@@ -623,7 +652,7 @@ export const linkVerifiedX = mutation({
 
 export const clearMockXForWallet = mutation({
   args: {},
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     const walletAddress = await authenticatedWallet(ctx);
     const profile = await getProfileByWallet(ctx, walletAddress);
     if (!profile) throw new Error("Profile not found.");
@@ -642,7 +671,7 @@ export const clearMockXForWallet = mutation({
 
 export const wipeWalletForTesting = mutation({
   args: {},
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     if (!testToolsEnabled()) {
       throw new Error("Test wallet wiping is disabled in production.");
     }
@@ -716,11 +745,12 @@ export const wipeWalletForTesting = mutation({
 });
 
 export const getOptedInWallets = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { secret: v.string() },
+  handler: async (ctx, args) => {
+    requireIndexerSecret(args.secret);
     const profiles = await ctx.db.query("profiles").collect();
     return profiles
-      .filter((p) => p.privacy === "public" || p.activitySharing === "public")
+      .filter((p) => p.privacy === "public" && p.activitySharing === "public")
       .map((p) => ({ walletAddress: p.walletAddress }));
   },
 });
@@ -728,6 +758,9 @@ export const getOptedInWallets = query({
 export const clearSeededActivities = mutation({
   args: {},
   handler: async (ctx) => {
+    if (!testToolsEnabled()) {
+      throw new Error("Seed cleanup is disabled in production.");
+    }
     const bodies = [
       "hit a 50x leverage slot spin on Hit.One",
       "tipped Juno for shipping a new community tool",
@@ -748,6 +781,7 @@ export const clearSeededActivities = mutation({
 
 export const insertIndexedActivity = mutation({
   args: {
+    secret: v.string(),
     walletAddress: v.string(),
     appName: v.string(),
     txHash: v.string(),
@@ -756,17 +790,23 @@ export const insertIndexedActivity = mutation({
     tone: v.string(),
   },
   handler: async (ctx, args) => {
+    requireIndexerSecret(args.secret);
+    const actorWallet = normalizeWallet(args.walletAddress);
+    const profile = await getProfileByWallet(ctx, actorWallet);
+    if (!profile || profile.privacy !== "public" || profile.activitySharing !== "public") {
+      throw new Error("Wallet is not opted in to public indexing.");
+    }
     const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
     const recent = await ctx.db
       .query("activities")
       .withIndex("by_actorWallet_and_happenedAt", (q) =>
-        q.eq("actorWallet", args.walletAddress).gte("happenedAt", thirtyMinAgo)
+        q.eq("actorWallet", actorWallet).gte("happenedAt", thirtyMinAgo)
       )
       .first();
     if (recent) return;
 
     await ctx.db.insert("activities", {
-      actorWallet: args.walletAddress,
+      actorWallet,
       kind: "app",
       appName: args.appName,
       body: args.body,
@@ -777,6 +817,46 @@ export const insertIndexedActivity = mutation({
       happenedAt: Date.now(),
       createdAt: Date.now(),
     });
+  },
+});
+
+export const wipeSeedProfiles = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!testToolsEnabled()) {
+      throw new Error("Seed profile wiping is disabled in production.");
+    }
+    const seedWallets = new Set([
+      "0x1111111111111111111111111111111111111111",
+      "0x2222222222222222222222222222222222222222",
+      "0x3333333333333333333333333333333333333333",
+      "0x4444444444444444444444444444444444444444",
+      "0x5555555555555555555555555555555555555555",
+      "0x6666666666666666666666666666666666666666",
+      "0x929c2bd4ba3d46723b0efe22978eb0000ce26517",
+    ]);
+    let count = 0;
+    for (const wallet of seedWallets) {
+      const profile = await ctx.db
+        .query("profiles")
+        .withIndex("by_walletAddress", (q) => q.eq("walletAddress", wallet))
+        .unique();
+      if (profile) {
+        const acts = await ctx.db
+          .query("activities")
+          .withIndex("by_actorWallet_and_happenedAt", (q) => q.eq("actorWallet", wallet))
+          .collect();
+        for (const a of acts) await ctx.db.delete(a._id);
+        await ctx.db.delete(profile._id);
+        count++;
+      }
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_actorWallet_and_happenedAt", (q) => q.eq("actorWallet", wallet))
+        .collect();
+      for (const a of acts) await ctx.db.delete(a._id);
+    }
+    return { deleted: count };
   },
 });
 

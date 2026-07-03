@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { notifyGroveSessionChanged, useGroveSession } from "../lib/use-grove-session";
+import { timeAgo } from "../lib/time";
 import { avatarSrc } from "./profile-avatar";
 import { XConnectBanner } from "./x-connect-banner";
 
@@ -64,7 +65,7 @@ export function GroveNav() {
   );
   const unreadCount = useQuery(api.notifications.getUnreadCount);
   const notifications = useQuery(api.notifications.getNotifications);
-  const markAllRead = useMutation(api.notifications.markAllRead);
+  const clearAll = useMutation(api.notifications.clearAll);
 
   useEffect(() => {
     if (!sessionWallet || !groveSession.token || !convexAuth.isAuthenticated) return;
@@ -288,7 +289,7 @@ export function GroveNav() {
                   {notifications && notifications.length > 0 ? (
                     <button
                       type="button"
-                      onClick={() => { void markAllRead(); }}
+                      onClick={() => { void clearAll(); }}
                       className="flex items-center gap-1 text-xs text-muted transition-colors hover:text-text"
                     >
                       <CheckCheck size={14} />
@@ -309,12 +310,12 @@ export function GroveNav() {
                       >
                         <p className={`leading-5 ${notif.read ? "" : "font-medium"}`}>{notif.body}</p>
                         <p className="mt-1 font-mono text-[11px] text-muted">
-                          {Math.max(1, Math.round((Date.now() - notif.createdAt) / 60_000))}m ago
+                          {timeAgo(notif.createdAt)}
                         </p>
                       </div>
                     ))
                   ) : (
-                    <div className="p-4 text-sm text-muted">No notifications yet.</div>
+                    <div className="p-4 text-sm text-muted">No notifications.</div>
                   )}
                 </div>
               </div>

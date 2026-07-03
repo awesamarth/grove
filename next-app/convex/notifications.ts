@@ -60,20 +60,20 @@ export const getUnreadCount = query({
   },
 });
 
-export const markAllRead = mutation({
+export const clearAll = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Sign in with MOSS first.");
     const walletAddress = normalizeWallet(identity.subject);
-    const unread = await ctx.db
+    const all = await ctx.db
       .query("notifications")
-      .withIndex("by_walletAddress_and_read", (q) =>
-        q.eq("walletAddress", walletAddress).eq("read", false),
+      .withIndex("by_walletAddress_and_createdAt", (q) =>
+        q.eq("walletAddress", walletAddress),
       )
       .collect();
-    for (const notification of unread) {
-      await ctx.db.patch(notification._id, { read: true });
+    for (const notification of all) {
+      await ctx.db.delete(notification._id);
     }
   },
 });

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "echo 'export const GROVE_ORIGIN = \"https://localhost:3000\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
-    "build:prod": "echo 'export const GROVE_ORIGIN = \"https://ongrove.network\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
+    "build:prod": "echo 'export const GROVE_ORIGIN = \"https://www.ongrove.network\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
     
     "package": "mkdir -p _dist && cp manifest.json _dist/ && cp sidepanel.html _dist/ && cp grove-logo*.png _dist/ 2>/dev/null || true && cp -r dist _dist/ && cd _dist && zip -r ../grove-extension.zip . && cd .. && rm -rf _dist",
     "release": "bun run build && bun run package",

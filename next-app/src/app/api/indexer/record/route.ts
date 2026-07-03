@@ -5,8 +5,7 @@ import { api } from "../../../../../convex/_generated/api";
 const INDEXER_SECRET = process.env.INDEXER_SECRET;
 
 function auth(request: Request) {
-  if (!INDEXER_SECRET) return true;
-  return request.headers.get("authorization") === `Bearer ${INDEXER_SECRET}`;
+  return Boolean(INDEXER_SECRET && request.headers.get("authorization") === `Bearer ${INDEXER_SECRET}`);
 }
 
 export async function POST(request: Request) {
@@ -36,6 +35,7 @@ export async function POST(request: Request) {
 
   try {
     await convex.mutation(api.dashboard.insertIndexedActivity, {
+      secret: INDEXER_SECRET!,
       walletAddress: body.walletAddress,
       appName: body.appName,
       txHash: body.txHash,

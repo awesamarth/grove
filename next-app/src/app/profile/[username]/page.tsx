@@ -417,7 +417,14 @@ export default function ProfilePage() {
                   profileData.recentActivities.map((activity) => (
                     <article key={activity._id} className="border-b border-border p-4 last:border-b-0 sm:p-5">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-[15px] leading-6">{activityBodyText(activity.body, activity.detail)}</p>
+                        <p className="text-[15px] leading-6">
+                          {activityBodyText(activity.body, activity.detail)}
+                          {!activity.detail ? (
+                            <span className="ml-2 font-mono text-[11px] text-muted/60">
+                              {timeAgo(activity.happenedAt)}
+                            </span>
+                          ) : null}
+                        </p>
                         <div className="relative shrink-0">
                           <button
                             type="button"
@@ -450,12 +457,14 @@ export default function ProfilePage() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="mt-3 flex items-center gap-2">
-                        <ActivityDetail detail={activity.detail} />
-                        <span className="ml-auto font-mono text-[11px] text-muted/60">
-                          {timeAgo(activity.happenedAt)}
-                        </span>
-                      </div>
+                      {activity.detail ? (
+                        <div className="mt-3 flex items-center gap-2">
+                          <ActivityDetail detail={activity.detail} />
+                          <span className="ml-auto font-mono text-[11px] text-muted/60">
+                            {timeAgo(activity.happenedAt)}
+                          </span>
+                        </div>
+                      ) : null}
                     </article>
                   ))
                 ) : (

@@ -15,7 +15,7 @@ export const CONTRACTS = {
 
 export type AppKey = keyof typeof CONTRACTS;
 
-export const GROVE_ORIGIN = process.env.GROVE_ORIGIN ?? "https://localhost:3000";
+export const CONVEX_URL = process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
 export const INDEXER_SECRET = process.env.INDEXER_SECRET;
 export const MEGAETH_WS = "wss://mainnet.megaeth.com/ws";
 

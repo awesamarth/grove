@@ -83,7 +83,6 @@ export default function Home() {
   const groveSession = useGroveSession();
   const convexAuth = useConvexAuth();
   const { connectX, pending: xConnectPending, error: xConnectError } = useXConnect();
-  const seed = useMutation(api.seed.initialise);
   const upsertProfile = useMutation(api.dashboard.upsertDevProfile);
   const updatePrivacy = useMutation(api.dashboard.updatePrivacy);
   const completeOnboarding = useMutation(api.dashboard.completeOnboarding);
@@ -97,6 +96,7 @@ export default function Home() {
   const [authError, setAuthError] = useState<string>();
   const [tab, setTab] = useState<"activity" | "people" | "apps">("activity");
   const [optimisticPrivacy, setOptimisticPrivacy] = useState<Privacy>();
+  const [privacySaved, setPrivacySaved] = useState<boolean>(false);
   const [optimisticActivityLikes, setOptimisticActivityLikes] = useState<
     Record<string, { liked: boolean; reactions: number }>
   >({});
@@ -122,9 +122,6 @@ export default function Home() {
   const profileStateReady = !viewerWallet || dashboard !== undefined;
   const showSetupCta = !viewerWallet || (profileStateReady && needsOnboarding);
 
-  useEffect(() => {
-    void seed({});
-  }, [seed]);
 
   useEffect(() => {
     if (!viewerWallet || !groveSession.token || !convexAuth.isAuthenticated) return;
@@ -132,6 +129,12 @@ export default function Home() {
       console.error("Could not create Grove shell profile.", error);
     });
   }, [convexAuth.isAuthenticated, groveSession.token, viewerWallet, upsertProfile]);
+
+  useEffect(() => {
+    if (!privacySaved) return;
+    const t = setTimeout(() => setPrivacySaved(false), 1500);
+    return () => clearTimeout(t);
+  }, [privacySaved]);
 
   useEffect(() => {
     if (!needsOnboarding || !viewerWallet || onboardingPromptedWallet === viewerWallet) return;
@@ -296,6 +299,7 @@ export default function Home() {
         privacy,
         activitySharing: privacy,
       });
+      setPrivacySaved(true);
     } catch (error) {
       setOptimisticPrivacy(undefined);
       throw error;
@@ -523,10 +527,10 @@ export default function Home() {
                   ) : (
                     <Avatar user="niko" label="Unknown" />
                   )}
-                  <div className="min-w-0">
-                    <div className="flex items-start justify-between gap-2">
+                  <div className="relative min-w-0">
+                    <div className="min-w-0 pr-8">
                       <div className="min-w-0">
-                        <p className="truncate text-sm">
+                        <p className="truncate text-sm leading-5">
                           {actor ? (
                             <Link href={`/profile/${actor.username}`} className="font-semibold hover:text-primary">
                               {actor.displayName}
@@ -542,7 +546,7 @@ export default function Home() {
                           </span>
                         </p>
                       </div>
-                      <div className="relative shrink-0">
+                      <div className="absolute right-0 top-0">
                         <button
                           type="button"
                           data-menu-button
@@ -575,27 +579,50 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <p className="mt-1 text-[15px] leading-6 text-text">{activityBodyText(activity.body, activity.detail)}</p>
-
-                    <div className="mt-3 flex items-end gap-2">
-                      <ActivityDetail detail={activity.detail} />
-                      <button
-                        type="button"
-                        onClick={() => void likeActivity(activity._id)}
-                        aria-pressed={likedByViewer}
-                        className={`ml-auto flex items-center gap-1.5 text-xs transition-colors ${
-                          likedByViewer
-                            ? "text-primary hover:text-primary"
-                            : "text-muted hover:text-primary"
-                        }`}
-                      >
-                        <Heart
-                          size={14}
-                          fill={likedByViewer ? "currentColor" : "none"}
-                        />{" "}
-                        {reactions}
-                      </button>
-                    </div>
+                    {activity.detail ? (
+                      <>
+                        <p className="text-[15px] leading-5 text-text">{activityBodyText(activity.body, activity.detail)}</p>
+                        <div className="mt-3 flex items-end gap-2">
+                          <ActivityDetail detail={activity.detail} />
+                          <button
+                            type="button"
+                            onClick={() => void likeActivity(activity._id)}
+                            aria-pressed={likedByViewer}
+                            className={`ml-auto flex items-center gap-1.5 text-xs transition-colors ${
+                              likedByViewer
+                                ? "text-primary hover:text-primary"
+                                : "text-muted hover:text-primary"
+                            }`}
+                          >
+                            <Heart
+                              size={14}
+                              fill={likedByViewer ? "currentColor" : "none"}
+                            />{" "}
+                            {reactions}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <p className="min-w-0 flex-1 text-[15px] leading-5 text-text">{activityBodyText(activity.body, activity.detail)}</p>
+                        <button
+                          type="button"
+                          onClick={() => void likeActivity(activity._id)}
+                          aria-pressed={likedByViewer}
+                          className={`shrink-0 flex items-center gap-1.5 text-xs transition-colors ${
+                            likedByViewer
+                              ? "text-primary hover:text-primary"
+                              : "text-muted hover:text-primary"
+                          }`}
+                        >
+                          <Heart
+                            size={14}
+                            fill={likedByViewer ? "currentColor" : "none"}
+                          />{" "}
+                          {reactions}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </article>
               );
@@ -710,10 +737,12 @@ export default function Home() {
                             : "text-muted hover:bg-panel hover:text-text"
                         }`}
                       >
-                        {privacy}
+                        {privacySaved && activePrivacy === privacy ? "saved" : privacy}
                       </button>
                     ))}
                   </div>
+
+
 
                   {!dashboard?.viewer?.xVerified ? (
                     <div id="connect-x" className="scroll-mt-24 rounded-md border border-text/15 bg-background p-3">

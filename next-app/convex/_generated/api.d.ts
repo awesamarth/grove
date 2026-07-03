@@ -12,7 +12,6 @@ import type * as dashboard from "../dashboard.js";
 import type * as euphoria from "../euphoria.js";
 import type * as http from "../http.js";
 import type * as notifications from "../notifications.js";
-import type * as seed from "../seed.js";
 import type * as social from "../social.js";
 
 import type {
@@ -26,7 +25,6 @@ declare const fullApi: ApiFromModules<{
   euphoria: typeof euphoria;
   http: typeof http;
   notifications: typeof notifications;
-  seed: typeof seed;
   social: typeof social;
 }>;
 
