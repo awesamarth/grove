@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'export const GROVE_ORIGIN = \"https://localhost:3000\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
-    "build:prod": "echo 'export const GROVE_ORIGIN = \"https://www.ongrove.network\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css",
+    "build": "bun -e 'const fs=require(\"fs\"); const m=JSON.parse(fs.readFileSync(\"manifest.json\",\"utf8\")); m.name=\"Grove Local\"; fs.writeFileSync(\"manifest.json\", JSON.stringify(m,null,2)+\"\\n\");' && echo 'export const GROVE_ORIGIN = \"https://localhost:3000\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css && cp src/styles.css dist/styles.css",
+    "build:prod": "bun -e 'const fs=require(\"fs\"); const m=JSON.parse(fs.readFileSync(\"manifest.json\",\"utf8\")); m.name=\"Grove\"; fs.writeFileSync(\"manifest.json\", JSON.stringify(m,null,2)+\"\\n\");' && echo 'export const GROVE_ORIGIN = \"https://www.ongrove.network\";' > src/lib/origin.ts && bun build src/background.ts src/sidepanel.ts src/content.ts src/euphoria-capture-bridge.ts --outdir=dist --target=browser --format=esm --sourcemap && cp src/content.css dist/content.css && cp src/styles.css dist/styles.css",
     
-    "package": "mkdir -p _dist && cp manifest.json _dist/ && cp sidepanel.html _dist/ && cp grove-logo*.png _dist/ 2>/dev/null || true && cp -r dist _dist/ && cd _dist && zip -r ../grove-extension.zip . && cd .. && rm -rf _dist",
+    "package": "rm -f grove-extension.zip && mkdir -p _dist && cp manifest.json _dist/ && cp sidepanel.html _dist/ && cp grove-logo*.png _dist/ 2>/dev/null || true && cp -r icons _dist/ && cp -r dist _dist/ && cd _dist && zip -r ../grove-extension.zip . && cd .. && rm -rf _dist",
     "release": "bun run build && bun run package",
     "release:prod": "bun run build:prod && bun run package",
     "clean": "rm -rf dist _dist grove-extension.zip"

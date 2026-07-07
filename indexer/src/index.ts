@@ -10,6 +10,21 @@ if (!INDEXER_SECRET) throw new Error("INDEXER_SECRET is required");
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
+const topStrikePlayerAbi = [
+  {
+    type: "function",
+    name: "players",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "name", type: "string" },
+      { name: "tradingEnabled", type: "bool" },
+      { name: "ipoWindowStartTimestamp", type: "uint256" },
+      { name: "ipoWindowEndTimestamp", type: "uint256" },
+    ],
+  },
+] as const satisfies Abi;
+
 const topStrikeEvents = [
   {
     type: "event",
@@ -94,7 +109,22 @@ function shortEth(value: bigint) {
   return `${formatted.toLocaleString(undefined, { maximumFractionDigits: 5 })} ETH`;
 }
 
-function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
+async function topStrikePlayerName(playerId: bigint) {
+  try {
+    const [name] = await client.readContract({
+      address: CONTRACTS.topstrike.address,
+      abi: topStrikePlayerAbi,
+      functionName: "players",
+      args: [playerId],
+    });
+    const clean = name.trim();
+    return clean ? clean : `player #${playerId.toString()}`;
+  } catch {
+    return `player #${playerId.toString()}`;
+  }
+}
+
+async function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
   try {
     const decoded = decodeEventLog({
       abi: topStrikeEvents,
@@ -109,9 +139,10 @@ function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
       if (!wallets.has(trader)) return null;
       const side = args.isBuy ? "bought" : "sold";
       const phase = args.isIPOWindow ? " in the IPO window" : "";
+      const playerName = await topStrikePlayerName(args.playerId);
       return {
         walletAddress: trader,
-        body: `${side} TopStrike player #${args.playerId.toString()} shares${phase} for ${shortEth(args.priceInWei)}`,
+        body: `${side} ${playerName} shares on TopStrike${phase} for ${shortEth(args.priceInWei)}`,
         tone: args.isBuy ? "primary" : "success",
       };
     }
@@ -120,17 +151,18 @@ function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
       const args = decoded.args;
       const from = args.from.toLowerCase();
       const to = args.to.toLowerCase();
+      const playerName = await topStrikePlayerName(args.playerId);
       if (wallets.has(to)) {
         return {
           walletAddress: to,
-          body: `received TopStrike player #${args.playerId.toString()} shares`,
+          body: `received ${playerName} shares on TopStrike`,
           tone: "success",
         };
       }
       if (wallets.has(from)) {
         return {
           walletAddress: from,
-          body: `sent TopStrike player #${args.playerId.toString()} shares`,
+          body: `sent ${playerName} shares on TopStrike`,
           tone: "primary",
         };
       }
@@ -152,9 +184,10 @@ function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
       const args = decoded.args;
       const winner = args.winner.toLowerCase();
       if (!wallets.has(winner)) return null;
+      const playerName = await topStrikePlayerName(args.playerId);
       return {
         walletAddress: winner,
-        body: `won TopStrike player #${args.playerId.toString()} share prizes${args.description ? ` — ${args.description}` : ""}`,
+        body: `won ${playerName} share prizes on TopStrike${args.description ? ` — ${args.description}` : ""}`,
         tone: "success",
       };
     }
@@ -163,6 +196,49 @@ function decodeTopStrikeActivity(log: Log, wallets: Set<string>) {
   }
 
   return null;
+}
+
+async function processLog(log: Log, currentLogCount: number) {
+  if (currentLogCount % 10 === 0) {
+    console.log(`[indexer] ${currentLogCount} events processed`);
+  }
+
+  const txHash = (log.transactionHash ?? "").toLowerCase();
+  if (seen.has(txHash)) return;
+
+  const logAddr = log.address.toLowerCase();
+  const contract = matchContract(logAddr);
+  if (!contract) return;
+
+  const decodedActivity = contract.key === "topstrike"
+    ? await decodeTopStrikeActivity(log, knownWallets)
+    : null;
+  const fallbackWallet = decodedActivity
+    ? null
+    : extractAddressesFromLog(log).find((w) => knownWallets.has(w));
+  const activity = decodedActivity ?? (fallbackWallet
+    ? { walletAddress: fallbackWallet, body: contract.body, tone: contract.color }
+    : null);
+  if (!activity) return;
+  seen.add(txHash);
+
+  const blockNumber = Number(log.blockNumber ?? 0);
+
+  try {
+    await recordActivity({
+      walletAddress: activity.walletAddress,
+      txHash,
+      appName: contract.name,
+      body: activity.body,
+      tone: activity.tone,
+      blockNumber,
+    });
+    console.log(
+      `[indexer] recorded: ${activity.walletAddress} → ${contract.name}: ${activity.body} (${txHash})`
+    );
+  } catch (err) {
+    console.error(`[indexer] record failed for ${txHash}:`, err instanceof Error ? err.message : err);
+  }
 }
 
 async function start() {
@@ -180,45 +256,7 @@ async function start() {
     onLogs: (logs) => {
       for (const log of logs) {
         logCount++;
-        if (logCount % 10 === 0) {
-          console.log(`[indexer] ${logCount} events processed`);
-        }
-
-        const txHash = (log.transactionHash ?? "").toLowerCase();
-        if (seen.has(txHash)) continue;
-
-        const logAddr = log.address.toLowerCase();
-        const contract = matchContract(logAddr);
-        if (!contract) continue;
-
-        const decodedActivity = contract.key === "topstrike"
-          ? decodeTopStrikeActivity(log, knownWallets)
-          : null;
-        const fallbackWallet = decodedActivity
-          ? null
-          : extractAddressesFromLog(log).find((w) => knownWallets.has(w));
-        const activity = decodedActivity ?? (fallbackWallet
-          ? { walletAddress: fallbackWallet, body: contract.body, tone: contract.color }
-          : null);
-        if (!activity) continue;
-        seen.add(txHash);
-
-        const blockNumber = Number(log.blockNumber ?? 0);
-
-        recordActivity({
-          walletAddress: activity.walletAddress,
-          txHash,
-          appName: contract.name,
-          body: activity.body,
-          tone: activity.tone,
-          blockNumber,
-        }).then(() => {
-          console.log(
-            `[indexer] recorded: ${activity.walletAddress} → ${contract.name}: ${activity.body} (${txHash})`
-          );
-        }).catch((err: any) => {
-          console.error(`[indexer] record failed for ${txHash}:`, err.message);
-        });
+        void processLog(log, logCount);
       }
     },
     onError: (err) => {

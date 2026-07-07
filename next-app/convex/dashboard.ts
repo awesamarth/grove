@@ -389,7 +389,12 @@ export const getProfileByUsername = query({
     const followers = await ctx.db
       .query("follows")
       .withIndex("by_targetWallet", (q) => q.eq("targetWallet", profile.walletAddress))
-      .take(24);
+      .take(100);
+
+    const following = await ctx.db
+      .query("follows")
+      .withIndex("by_followerWallet", (q) => q.eq("followerWallet", profile.walletAddress))
+      .take(100);
 
     const recentActivities = await ctx.db
       .query("activities")
@@ -423,6 +428,7 @@ export const getProfileByUsername = query({
       },
       isFollowed: Boolean(follow),
       followerCount: followers.length,
+      followingCount: following.length,
       followersPreview: followerProfiles,
       recentActivities: recentActivities.filter(
         (activity) => activity.visibility === "public" && profile.activitySharing === "public",
@@ -466,6 +472,92 @@ export const getProfileActivities = query({
       },
       activities: visibleActivities,
     };
+  },
+});
+
+export const getProfileFollows = query({
+  args: {
+    username: v.string(),
+    kind: v.union(v.literal("followers"), v.literal("following")),
+  },
+  handler: async (ctx, args) => {
+    const cleanUsername = args.username.replace(/^@/, "").trim().toLowerCase();
+    const identity = await ctx.auth.getUserIdentity();
+    const viewerWallet = identity ? normalizeWallet(identity.subject) : undefined;
+
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_username", (q) => q.eq("username", cleanUsername))
+      .unique();
+
+    if (!profile) return { profile: null, people: [] };
+    const isSelf = viewerWallet === profile.walletAddress;
+    if (profile.privacy !== "public" && !isSelf) return { profile: null, people: [] };
+
+    const follows = args.kind === "followers"
+      ? await ctx.db
+          .query("follows")
+          .withIndex("by_targetWallet", (q) => q.eq("targetWallet", profile.walletAddress))
+          .order("desc")
+          .take(100)
+      : await ctx.db
+          .query("follows")
+          .withIndex("by_followerWallet", (q) => q.eq("followerWallet", profile.walletAddress))
+          .order("desc")
+          .take(100);
+
+    const people = [];
+    for (const follow of follows) {
+      const wallet = args.kind === "followers" ? follow.followerWallet : follow.targetWallet;
+      const person = await getProfileByWallet(ctx, wallet);
+      if (!person) continue;
+      if (person.privacy !== "public" && person.walletAddress !== viewerWallet) continue;
+      people.push({
+        ...publicProfile(person),
+        avatarUrl: await avatarUrl(ctx, person),
+        followedAt: follow.createdAt,
+      });
+    }
+
+    return {
+      profile: publicProfile(profile),
+      people,
+    };
+  },
+});
+
+export const getActivityLikers = query({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const viewerWallet = identity ? normalizeWallet(identity.subject) : undefined;
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) return [];
+
+    const actor = await getProfileByWallet(ctx, activity.actorWallet);
+    if (!isVisibleToViewer(activity, actor, viewerWallet)) return [];
+
+    const likes = await ctx.db
+      .query("activityLikes")
+      .withIndex("by_activityId", (q) => q.eq("activityId", args.activityId))
+      .order("desc")
+      .take(100);
+
+    const likers = [];
+    for (const like of likes) {
+      const profile = await getProfileByWallet(ctx, like.walletAddress);
+      if (!profile) continue;
+      if (profile.privacy !== "public" && profile.walletAddress !== viewerWallet) continue;
+      likers.push({
+        ...publicProfile(profile),
+        avatarUrl: await avatarUrl(ctx, profile),
+        likedAt: like.createdAt,
+      });
+    }
+
+    return likers;
   },
 });
 

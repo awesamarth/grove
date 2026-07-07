@@ -16,6 +16,7 @@ import {
   Upload,
   UserPlus,
   WalletCards,
+  X,
 } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useMutation, useQuery } from "convex/react";
@@ -77,6 +78,11 @@ export default function ProfilePage() {
   const [editPending, setEditPending] = useState(false);
   const [uploadPending, setUploadPending] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [followModal, setFollowModal] = useState<"followers" | "following" | null>(null);
+  const followList = useQuery(
+    api.dashboard.getProfileFollows,
+    followModal ? { username, kind: followModal } : "skip",
+  );
 
   useEffect(() => {
     if (!menuOpenId) return;
@@ -386,16 +392,26 @@ export default function ProfilePage() {
             </div>
 
             <div className="mt-5 grid grid-cols-3 border-y border-text/20">
-              {[
-                [profileData.profile.karma, "karma"],
-                [profileData.profile.upvotes, "upvotes"],
-                [profileData.profile.downvotes, "downvotes"],
-              ].map(([value, label]) => (
-                <div key={label} className="border-r border-text/20 py-4 text-center last:border-r-0">
-                  <p className="font-mono text-xl font-bold text-primary">{value}</p>
-                  <p className="mt-1 text-xs text-muted">{label}</p>
-                </div>
-              ))}
+              <div className="border-r border-text/20 py-4 text-center">
+                <p className="font-mono text-xl font-bold text-primary">{profileData.profile.karma}</p>
+                <p className="mt-1 text-xs text-muted">karma</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFollowModal("followers")}
+                className="border-r border-text/20 py-4 text-center transition-colors hover:bg-panel"
+              >
+                <p className="font-mono text-xl font-bold text-primary">{profileData.followerCount}</p>
+                <p className="mt-1 text-xs text-muted">followers</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFollowModal("following")}
+                className="py-4 text-center transition-colors hover:bg-panel"
+              >
+                <p className="font-mono text-xl font-bold text-primary">{profileData.followingCount}</p>
+                <p className="mt-1 text-xs text-muted">following</p>
+              </button>
             </div>
 
             <div className="mt-10">
@@ -562,6 +578,58 @@ export default function ProfilePage() {
       {message ? (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-primary bg-primary-muted px-4 py-3 text-sm text-primary shadow-lg">
           {message}
+        </div>
+      ) : null}
+
+      {followModal ? (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-dark/35 px-4 backdrop-blur-sm"
+          onMouseDown={() => setFollowModal(null)}
+        >
+          <div
+            className="w-full max-w-[420px] overflow-hidden rounded-lg border border-text/20 bg-panel shadow-[0_24px_80px_rgb(5_32_13/0.25)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+              <div>
+                <p className="font-mono text-[11px] uppercase text-muted">{profileData?.profile?.displayName}</p>
+                <h2 className="mt-1 text-2xl font-medium capitalize">{followModal}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFollowModal(null)}
+                className="grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted transition-colors hover:border-text hover:text-text"
+                aria-label="Close follows list"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="max-h-[360px] overflow-y-auto p-2">
+              {followList === undefined ? (
+                <div className="p-3 text-sm text-muted">Loading {followModal}...</div>
+              ) : followList.people.length ? (
+                followList.people.map((person) => (
+                  <Link
+                    key={person.walletAddress}
+                    href={`/profile/${person.username}`}
+                    onClick={() => setFollowModal(null)}
+                    className="flex items-center gap-3 rounded-md p-3 transition-colors hover:bg-background"
+                  >
+                    <Avatar user={person.avatar} avatarUrl={person.avatarUrl} label={person.displayName} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{person.displayName}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {person.xHandle ? `@${person.xHandle}` : person.username}
+                      </span>
+                    </span>
+                    <span className="font-mono text-xs text-primary">{person.karma}</span>
+                  </Link>
+                ))
+              ) : (
+                <div className="p-3 text-sm text-muted">No public {followModal} yet.</div>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
 

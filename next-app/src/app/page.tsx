@@ -85,6 +85,7 @@ export default function Home() {
   const { connectX, pending: xConnectPending, error: xConnectError } = useXConnect();
   const upsertProfile = useMutation(api.dashboard.upsertDevProfile);
   const updatePrivacy = useMutation(api.dashboard.updatePrivacy);
+  const clearXVerification = useMutation(api.dashboard.clearMockXForWallet);
   const completeOnboarding = useMutation(api.dashboard.completeOnboarding);
   const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
   const setFollow = useMutation(api.social.setFollow);
@@ -111,10 +112,20 @@ export default function Home() {
   const [onboardingPromptedWallet, setOnboardingPromptedWallet] = useState<string>();
   const [onboardingPending, setOnboardingPending] = useState(false);
   const [onboardingUploadPending, setOnboardingUploadPending] = useState(false);
+  const [disconnectXPending, setDisconnectXPending] = useState(false);
+  const [disconnectXMessage, setDisconnectXMessage] = useState<string>();
+  const [likesActivityId, setLikesActivityId] = useState<Id<"activities"> | null>(null);
   const viewerWallet = groveSession.walletAddress ?? undefined;
   const dashboard = useQuery(api.dashboard.getDashboard, {
     viewerWallet,
   });
+  const activityLikers = useQuery(
+    api.dashboard.getActivityLikers,
+    likesActivityId ? { activityId: likesActivityId } : "skip",
+  );
+  const selectedLikesActivity = likesActivityId
+    ? dashboard?.feed.find((activity) => activity._id === likesActivityId)
+    : undefined;
   const activePrivacy = optimisticPrivacy ?? dashboard?.viewer?.privacy;
   const needsOnboarding = Boolean(
     viewerWallet && dashboard?.viewer && !dashboard.viewer.onboardingComplete,
@@ -283,6 +294,22 @@ export default function Home() {
       }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "MOSS tip flow failed.");
+    }
+  }
+
+  async function disconnectX() {
+    if (!dashboard?.viewer?.xVerified) return;
+    setDisconnectXPending(true);
+    setDisconnectXMessage(undefined);
+
+    try {
+      await clearXVerification({});
+      setDisconnectXMessage("X disconnected. Your generated Grove handle is active again.");
+    } catch (error) {
+      setDisconnectXMessage(error instanceof Error ? error.message : "Could not disconnect X.");
+    } finally {
+      setDisconnectXPending(false);
+      window.setTimeout(() => setDisconnectXMessage(undefined), 2600);
     }
   }
 
@@ -598,7 +625,25 @@ export default function Home() {
                               size={14}
                               fill={likedByViewer ? "currentColor" : "none"}
                             />{" "}
-                            {reactions}
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="underline-offset-2 hover:underline"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setLikesActivityId(activity._id);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setLikesActivityId(activity._id);
+                                }
+                              }}
+                            >
+                              {reactions}
+                            </span>
                           </button>
                         </div>
                       </>
@@ -619,7 +664,25 @@ export default function Home() {
                             size={14}
                             fill={likedByViewer ? "currentColor" : "none"}
                           />{" "}
-                          {reactions}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            className="underline-offset-2 hover:underline"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setLikesActivityId(activity._id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setLikesActivityId(activity._id);
+                              }
+                            }}
+                          >
+                            {reactions}
+                          </span>
                         </button>
                       </div>
                     )}
@@ -770,6 +833,17 @@ export default function Home() {
                         <p className="mt-2 text-xs leading-5 text-muted">
                           Verified through X. This handle is your Grove username.
                         </p>
+                        <button
+                          type="button"
+                          disabled={disconnectXPending}
+                          onClick={disconnectX}
+                          className="mt-3 h-8 w-full rounded-md border border-danger bg-danger-muted px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {disconnectXPending ? "Disconnecting" : "Disconnect X"}
+                        </button>
+                        {disconnectXMessage ? (
+                          <p className="mt-2 text-xs leading-5 text-muted">{disconnectXMessage}</p>
+                        ) : null}
                       </div>
                     ) : (
                       <button
@@ -1001,6 +1075,63 @@ export default function Home() {
       {authState === "error" ? (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-danger bg-danger-muted px-4 py-3 text-sm text-danger shadow-lg">
           {authError}
+        </div>
+      ) : null}
+
+      {likesActivityId ? (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-dark/35 px-4 backdrop-blur-sm"
+          onMouseDown={() => setLikesActivityId(null)}
+        >
+          <div
+            className="w-full max-w-[420px] overflow-hidden rounded-lg border border-text/20 bg-panel shadow-[0_24px_80px_rgb(5_32_13/0.25)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+              <div>
+                <p className="font-mono text-[11px] uppercase text-muted">Activity likes</p>
+                <h2 className="mt-1 text-2xl font-medium">Liked by</h2>
+                {selectedLikesActivity ? (
+                  <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted">
+                    {activityBodyText(selectedLikesActivity.body, selectedLikesActivity.detail)}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLikesActivityId(null)}
+                className="grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted transition-colors hover:border-text hover:text-text"
+                aria-label="Close likes list"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="max-h-[360px] overflow-y-auto p-2">
+              {activityLikers === undefined ? (
+                <div className="p-3 text-sm text-muted">Loading likes...</div>
+              ) : activityLikers.length ? (
+                activityLikers.map((liker) => (
+                  <Link
+                    key={liker.walletAddress}
+                    href={`/profile/${liker.username}`}
+                    onClick={() => setLikesActivityId(null)}
+                    className="flex items-center gap-3 rounded-md p-3 transition-colors hover:bg-background"
+                  >
+                    <Avatar user={liker.avatar} avatarUrl={liker.avatarUrl} label={liker.displayName} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{liker.displayName}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {liker.xHandle ? `@${liker.xHandle}` : liker.username}
+                      </span>
+                    </span>
+                    <span className="font-mono text-xs text-primary">{liker.karma}</span>
+                  </Link>
+                ))
+              ) : (
+                <div className="p-3 text-sm text-muted">No public likes yet.</div>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
 

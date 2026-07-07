@@ -1,10 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "Grove",
-  "version": "0.0.2",
+  "name": "Grove Local",
+  "version": "0.0.3",
   "description": "Grove sidebar companion for MOSS wallets.",
   "minimum_chrome_version": "116",
-  "permissions": ["sidePanel", "storage", "identity", "clipboardRead", "clipboardWrite"],
+  "icons": {
+    "16": "icons/grove-16.png",
+    "32": "icons/grove-32.png",
+    "48": "icons/grove-48.png",
+    "128": "icons/grove-128.png"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "identity",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
   "host_permissions": [
     "https://localhost:3000/*",
     "https://grove-samarth-saxenas-projects.vercel.app/*",
@@ -16,29 +28,58 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://x.com/*", "https://twitter.com/*"],
-      "js": ["dist/content.js"],
-      "css": ["dist/content.css"],
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
+      "css": [
+        "dist/content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://euphoria.finance/*"],
-      "js": ["dist/content.js"],
+      "matches": [
+        "https://euphoria.finance/*"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["grove-logo.png"],
-      "matches": ["https://x.com/*", "https://twitter.com/*"]
+      "resources": [
+        "grove-logo.png"
+      ],
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ]
     },
     {
-      "resources": ["dist/html2canvas.min.js", "dist/euphoria-capture-bridge.js", "grove-logo.png", "grove-logo-new.png"],
-      "matches": ["https://euphoria.finance/*"]
+      "resources": [
+        "dist/html2canvas.min.js",
+        "dist/euphoria-capture-bridge.js",
+        "grove-logo.png",
+        "grove-logo-new.png"
+      ],
+      "matches": [
+        "https://euphoria.finance/*"
+      ]
     }
   ],
   "action": {
-    "default_title": "Open Grove"
+    "default_title": "Open Grove",
+    "default_icon": {
+      "16": "icons/grove-16.png",
+      "32": "icons/grove-32.png",
+      "48": "icons/grove-48.png",
+      "128": "icons/grove-128.png"
+    }
   },
   "background": {
     "service_worker": "dist/background.js",
