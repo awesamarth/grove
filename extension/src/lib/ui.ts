@@ -75,7 +75,7 @@ export function showPopup(anchor: HTMLElement, p: GroveProfile) {
         const left = Math.round(window.screenLeft + (window.outerWidth - w) / 2);
         const top = Math.round(window.screenTop + (window.outerHeight - h) / 2);
         window.open(
-          `${GROVE_ORIGIN}/tip/${encodeURIComponent(username)}`,
+          `${GROVE_ORIGIN}/tip/${encodeURIComponent(username)}?autostart=1&close=1`,
           "grove-tip",
           `width=${w},height=${h},popup,left=${left},top=${top}`
         );

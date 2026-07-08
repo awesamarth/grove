@@ -202,6 +202,8 @@ export const updateTipIntentStatus = mutation({
     intentId: v.id("tipIntents"),
     status: v.union(v.literal("paid"), v.literal("cancelled"), v.literal("failed")),
     txHash: v.optional(v.string()),
+    amount: v.optional(v.string()),
+    token: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const walletAddress = await authenticatedWallet(ctx);
@@ -214,17 +216,45 @@ export const updateTipIntentStatus = mutation({
     await ctx.db.patch(args.intentId, {
       status: args.status,
       txHash: args.txHash,
+      amount: args.amount ?? intent.amount,
+      token: args.token ?? intent.token,
       updatedAt: Date.now(),
     });
 
     if (args.status === "paid") {
       const sender = await getProfileByWallet(ctx, intent.fromWallet);
+      const recipient = await getProfileByWallet(ctx, intent.toWallet);
+      const paidAmount = args.amount ?? intent.amount;
+      const paidToken = args.token ?? intent.token;
+      const tipLabel = paidAmount && paidToken !== "MOSS"
+        ? `${paidAmount} ${paidToken}`
+        : "a MOSS tip";
+
       if (sender) {
         await ctx.runMutation(internal.notifications.insertNotification, {
           walletAddress: intent.toWallet,
           kind: "tip_received",
           actorWallet: intent.fromWallet,
-          body: `${sender.displayName} tipped you ${intent.amount} ${intent.token}.`,
+          body: `${sender.displayName} sent you ${tipLabel}.`,
+        });
+      }
+
+      if (
+        sender &&
+        recipient &&
+        sender.privacy === "public" &&
+        sender.activitySharing === "public"
+      ) {
+        await ctx.db.insert("activities", {
+          actorWallet: intent.fromWallet,
+          kind: "tip",
+          body: `tipped ${tipLabel} to ${recipient.displayName}`,
+          detail: "",
+          visibility: "public",
+          tone: "success",
+          reactions: 0,
+          happenedAt: Date.now(),
+          createdAt: Date.now(),
         });
       }
     }

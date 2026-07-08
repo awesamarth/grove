@@ -53,6 +53,14 @@ type AuthChallenge = {
   error?: string;
 };
 
+function displayActivityBody(activity: { kind: string; body: string; detail?: string | null }) {
+  if (activity.kind === "tip" && activity.body.startsWith("tipped ")) {
+    if (/^tipped\s+.+\s+to\s+/i.test(activity.body)) return activity.body;
+    return "tipped someone";
+  }
+  return activityBodyText(activity.body, activity.detail);
+}
+
 function Avatar({
   user,
   avatarUrl,
@@ -608,7 +616,7 @@ export default function Home() {
 
                     {activity.detail ? (
                       <>
-                        <p className="text-[15px] leading-5 text-text">{activityBodyText(activity.body, activity.detail)}</p>
+                        <p className="text-[15px] leading-5 text-text">{displayActivityBody(activity)}</p>
                         <div className="mt-3 flex items-end gap-2">
                           <ActivityDetail detail={activity.detail} />
                           <button
@@ -649,7 +657,7 @@ export default function Home() {
                       </>
                     ) : (
                       <div className="flex items-center gap-3">
-                        <p className="min-w-0 flex-1 text-[15px] leading-5 text-text">{activityBodyText(activity.body, activity.detail)}</p>
+                        <p className="min-w-0 flex-1 text-[15px] leading-5 text-text">{displayActivityBody(activity)}</p>
                         <button
                           type="button"
                           onClick={() => void likeActivity(activity._id)}
@@ -1093,7 +1101,7 @@ export default function Home() {
                 <h2 className="mt-1 text-2xl font-medium">Liked by</h2>
                 {selectedLikesActivity ? (
                   <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted">
-                    {activityBodyText(selectedLikesActivity.body, selectedLikesActivity.detail)}
+                    {displayActivityBody(selectedLikesActivity)}
                   </p>
                 ) : null}
               </div>

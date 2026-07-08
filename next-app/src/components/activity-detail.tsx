@@ -36,6 +36,7 @@ export function activityBodyText(body: string, detail?: string | null) {
 export function ActivityDetail({ detail }: { detail?: string | null }) {
   if (!detail) return null;
   const parsed = parseDetail(detail);
+  if (!parsed && detail.trim().startsWith("{")) return null;
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {

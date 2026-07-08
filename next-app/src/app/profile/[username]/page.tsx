@@ -28,6 +28,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { GroveNav } from "../../../components/grove-nav";
 import { ProfileAvatar } from "../../../components/profile-avatar";
 import { ActivityDetail, activityBodyText } from "../../../components/activity-detail";
+import { resolveMossTipPayment } from "../../../lib/moss-tip";
 import { useGroveSession } from "../../../lib/use-grove-session";
 import { timeAgo } from "../../../lib/time";
 
@@ -51,6 +52,14 @@ function shortWallet(walletAddress: string) {
   return `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}`;
 }
 
+function displayActivityBody(activity: { kind: string; body: string; detail?: string | null }) {
+  if (activity.kind === "tip" && activity.body.startsWith("tipped ")) {
+    if (/^tipped\s+.+\s+to\s+/i.test(activity.body)) return activity.body;
+    return "tipped someone";
+  }
+  return activityBodyText(activity.body, activity.detail);
+}
+
 export default function ProfilePage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
@@ -63,6 +72,8 @@ export default function ProfilePage() {
   });
   const setFollow = useMutation(api.social.setFollow);
   const vote = useMutation(api.social.vote);
+  const createTipIntent = useMutation(api.social.createTipIntent);
+  const updateTipIntentStatus = useMutation(api.social.updateTipIntentStatus);
   const generateProfileAvatarUploadUrl = useMutation(api.dashboard.generateProfileAvatarUploadUrl);
   const updateProfile = useMutation(api.dashboard.updateProfile);
   const deleteActivity = useMutation(api.dashboard.deleteActivity);
@@ -78,6 +89,7 @@ export default function ProfilePage() {
   const [editPending, setEditPending] = useState(false);
   const [uploadPending, setUploadPending] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [tipPending, setTipPending] = useState(false);
   const [followModal, setFollowModal] = useState<"followers" | "following" | null>(null);
   const followList = useQuery(
     api.dashboard.getProfileFollows,
@@ -133,9 +145,14 @@ export default function ProfilePage() {
   }
 
   async function tipWithMoss() {
-    if (!profileData?.profile) return;
+    if (!profileData?.profile || tipPending) return;
 
+    setTipPending(true);
     try {
+      if (!viewerWallet) {
+        throw new Error("Sign in with MOSS before tipping.");
+      }
+
       if (status !== "connected") {
         const connection = await mega.connect();
 
@@ -145,21 +162,53 @@ export default function ProfilePage() {
         }
       }
 
+      const intentId = await createTipIntent({
+        targetWallet: profileData.profile.walletAddress,
+        amount: "",
+        token: "MOSS",
+        source: "web",
+      });
+
       const result = await mega.send({
-        token: "native",
         destination: profileData.profile.walletAddress as `0x${string}`,
       });
 
-      if (result.status === "cancelled") return;
-      if (result.status === "error") {
+      const payment = await resolveMossTipPayment(
+        result,
+        viewerWallet,
+        profileData.profile.walletAddress,
+      );
+
+      const txHash =
+        result.receipt?.hash ??
+        result.receipt?.transactionHash ??
+        result.receipts?.[0]?.hash;
+
+      if (result.status === "approved") {
+        await updateTipIntentStatus({
+          intentId,
+          status: "paid",
+          txHash,
+          amount: payment?.amount,
+          token: payment?.token,
+        });
+        setMessage(
+          payment
+            ? `Sent ${payment.amount} ${payment.token} to ${profileData.profile.displayName}`
+            : `Tipped ${profileData.profile.displayName}`,
+        );
+        window.setTimeout(() => setMessage(undefined), 2200);
+      } else if (result.status === "cancelled") {
+        await updateTipIntentStatus({ intentId, status: "cancelled" });
+      } else {
+        await updateTipIntentStatus({ intentId, status: "failed" });
         throw new Error(result.error ?? "MOSS tip flow failed.");
       }
-
-      setMessage("MOSS tip flow opened");
-      window.setTimeout(() => setMessage(undefined), 1800);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "MOSS tip flow failed.");
-      window.setTimeout(() => setMessage(undefined), 2200);
+      window.setTimeout(() => setMessage(undefined), 2400);
+    } finally {
+      setTipPending(false);
     }
   }
 
@@ -378,11 +427,12 @@ export default function ProfilePage() {
                         </button>
                         <button
                           type="button"
-                          onClick={tipWithMoss}
-                          className="flex h-10 items-center gap-2 rounded-md border border-primary bg-primary-muted px-4 text-sm font-medium text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white"
+                          disabled={tipPending}
+                          onClick={() => void tipWithMoss()}
+                          className="flex h-10 items-center gap-2 rounded-md border border-primary bg-primary-muted px-4 text-sm font-medium text-primary transition-colors hover:border-dark hover:bg-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <WalletCards size={16} />
-                          Tip
+                          {tipPending ? "Tipping" : "Tip"}
                         </button>
                       </>
                     ) : null}
@@ -434,7 +484,9 @@ export default function ProfilePage() {
                     <article key={activity._id} className="border-b border-border p-4 last:border-b-0 sm:p-5">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-[15px] leading-6">
-                          {activityBodyText(activity.body, activity.detail)}
+                          {activity.kind === "tip"
+                            ? `${isSelf ? "You" : profileData.profile.displayName} ${displayActivityBody(activity)}`
+                            : displayActivityBody(activity)}
                           {!activity.detail ? (
                             <span className="ml-2 font-mono text-[11px] text-muted/60">
                               {timeAgo(activity.happenedAt)}
@@ -580,6 +632,7 @@ export default function ProfilePage() {
           {message}
         </div>
       ) : null}
+
 
       {followModal ? (
         <div

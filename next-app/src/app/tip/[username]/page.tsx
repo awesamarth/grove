@@ -3,23 +3,35 @@
 import { Check, ExternalLink, Loader2, WalletCards } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useMutation, useQuery } from "convex/react";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
-import { ActivityDetail } from "../../../components/activity-detail";
+import { ActivityDetail, activityBodyText } from "../../../components/activity-detail";
 import { GroveNav } from "../../../components/grove-nav";
 import { ProfileAvatar } from "../../../components/profile-avatar";
+import { resolveMossTipPayment } from "../../../lib/moss-tip";
 import { useGroveSession } from "../../../lib/use-grove-session";
+
+function displayActivityBody(activity: { kind: string; body: string; detail?: string | null }) {
+  if (activity.kind === "tip" && activity.body.startsWith("tipped ")) {
+    if (/^tipped\s+.+\s+to\s+/i.test(activity.body)) return activity.body;
+    return "tipped someone";
+  }
+  return activityBodyText(activity.body, activity.detail);
+}
 
 export default function TipPage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
+  const searchParams = useSearchParams();
+  const autoStart = searchParams.get("autostart") === "1";
+  const closeOnSuccess = searchParams.get("close") === "1";
+  const autoStartedRef = useRef(false);
   const { status, initialised } = useStatus();
   const groveSession = useGroveSession();
   const data = useQuery(api.dashboard.getProfileByUsername, { username });
   const createTipIntent = useMutation(api.social.createTipIntent);
   const updateTipIntentStatus = useMutation(api.social.updateTipIntentStatus);
-  const [amount, setAmount] = useState("1.00");
   const [state, setState] = useState<"idle" | "pending" | "draft" | "paid" | "error">("idle");
   const [message, setMessage] = useState<string>();
 
@@ -52,15 +64,20 @@ export default function TipPage() {
 
       const intentId = await createTipIntent({
         targetWallet: data.profile.walletAddress,
-        amount,
-        token: "USDM",
+        amount: "",
+        token: "MOSS",
         source: "web",
       });
 
       const result = await mega.send({
-        token: "native",
         destination: data.profile.walletAddress as `0x${string}`,
       });
+
+      const payment = await resolveMossTipPayment(
+        result,
+        walletAddress,
+        data.profile.walletAddress,
+      );
 
       const txHash =
         result.receipt?.hash ??
@@ -68,9 +85,18 @@ export default function TipPage() {
         result.receipts?.[0]?.hash;
 
       if (result.status === "approved") {
-        await updateTipIntentStatus({ intentId, status: "paid", txHash });
+        await updateTipIntentStatus({
+          intentId,
+          status: "paid",
+          txHash,
+          amount: payment?.amount,
+          token: payment?.token,
+        });
         setState("paid");
-        setMessage("MOSS approved the payment flow.");
+        setMessage(payment ? `Sent ${payment.amount} ${payment.token}.` : "MOSS approved the payment flow.");
+        if (closeOnSuccess) {
+          window.setTimeout(() => window.close(), 500);
+        }
       } else if (result.status === "cancelled") {
         await updateTipIntentStatus({ intentId, status: "cancelled" });
         setState("draft");
@@ -85,6 +111,12 @@ export default function TipPage() {
       setMessage(error instanceof Error ? error.message : "Could not create tip intent.");
     }
   }
+
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current || !initialised || !data?.profile) return;
+    autoStartedRef.current = true;
+    void createIntent();
+  }, [autoStart, initialised, data?.profile]);
 
   return (
     <main className="grove-shell min-h-screen bg-background text-text">
@@ -128,20 +160,9 @@ export default function TipPage() {
               </div>
 
               <div className="space-y-4 p-5">
-                <label className="block">
-                  <span className="font-mono text-[11px] uppercase text-muted">Amount</span>
-                  <div className="mt-2 flex rounded-md border border-border bg-background focus-within:border-primary">
-                    <input
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      className="min-w-0 flex-1 bg-transparent px-3 py-3 font-mono text-2xl outline-none"
-                      inputMode="decimal"
-                    />
-                    <span className="grid w-20 place-items-center border-l border-border font-mono text-sm text-primary">
-                      USDM
-                    </span>
-                  </div>
-                </label>
+                <div className="rounded-md border border-border bg-background p-3 text-sm leading-6 text-muted">
+                  MOSS will open the payment flow so you can choose the amount and token before approving.
+                </div>
 
                 <button
                   type="button"
@@ -172,7 +193,7 @@ export default function TipPage() {
                     {data.recentActivities.length ? (
                       data.recentActivities.map((activity) => (
                         <div key={activity._id} className="rounded-md border border-border bg-background p-3">
-                          <p className="text-sm">{activity.body}</p>
+                          <p className="text-sm">{displayActivityBody(activity)}</p>
                           <div className="mt-2"><ActivityDetail detail={activity.detail} /></div>
                         </div>
                       ))

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Check, CheckCheck, Copy, LogOut, Search, UserRound } from "lucide-react";
+import { Bell, Check, Copy, LayoutGrid, LogOut, Search, Trash2, UserRound } from "lucide-react";
 import { mega, useStatus } from "@megaeth-labs/wallet-sdk-react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import Link from "next/link";
@@ -65,7 +65,9 @@ export function GroveNav() {
   );
   const unreadCount = useQuery(api.notifications.getUnreadCount);
   const notifications = useQuery(api.notifications.getNotifications);
-  const clearAll = useMutation(api.notifications.clearAll);
+  const markRead = useMutation(api.notifications.markRead);
+  const markAllRead = useMutation(api.notifications.markAllRead);
+  const deleteNotification = useMutation(api.notifications.deleteNotification);
 
   useEffect(() => {
     if (!sessionWallet || !groveSession.token || !convexAuth.isAuthenticated) return;
@@ -266,10 +268,21 @@ export function GroveNav() {
 
           <div className="ml-auto" />
 
+          <Link
+            href="/apps"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-text/15 bg-panel px-2.5 text-sm font-medium text-muted transition-colors hover:border-primary hover:bg-primary-muted hover:text-primary sm:px-3"
+          >
+            <LayoutGrid size={16} strokeWidth={2} />
+            <span className="hidden sm:inline">Apps</span>
+          </Link>
+
           <div ref={notifMenuRef} className="relative">
             <button
               type="button"
-              onClick={() => setNotifOpen((open) => !open)}
+              onClick={() => {
+                setNotifOpen((open) => !open);
+                if (unreadCount && unreadCount > 0) void markAllRead();
+              }}
               aria-label="Notifications"
               title="Notifications"
               className="relative grid size-9 place-items-center rounded-md border border-primary bg-primary text-white transition-colors hover:border-dark hover:bg-dark"
@@ -286,34 +299,71 @@ export function GroveNav() {
               <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-lg border border-text/15 bg-panel shadow-[0_12px_30px_rgb(5_32_13/0.12)]">
                 <div className="flex items-center justify-between border-b border-border px-4 py-3">
                   <p className="text-sm font-semibold">Notifications</p>
-                  {notifications && notifications.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => { void clearAll(); }}
-                      className="flex items-center gap-1 text-xs text-muted transition-colors hover:text-text"
-                    >
-                      <CheckCheck size={14} />
-                      Clear all
-                    </button>
-                  ) : null}
+                  <p className="font-mono text-[11px] text-muted">
+                    {notifications?.length ? `${notifications.length} recent` : ""}
+                  </p>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                   {notifications === undefined ? (
                     <div className="p-4 text-sm text-muted">Loading...</div>
                   ) : notifications.length ? (
-                    notifications.map((notif) => (
-                      <div
-                        key={notif._id}
-                        className={`border-b border-border px-4 py-3 text-sm last:border-b-0 ${
-                          notif.read ? "opacity-60" : ""
-                        }`}
-                      >
-                        <p className={`leading-5 ${notif.read ? "" : "font-medium"}`}>{notif.body}</p>
-                        <p className="mt-1 font-mono text-[11px] text-muted">
-                          {timeAgo(notif.createdAt)}
-                        </p>
-                      </div>
-                    ))
+                    notifications.map((notif) => {
+                      const content = (
+                        <>
+                          <p className={`leading-5 ${notif.read ? "" : "font-medium"}`}>{notif.body}</p>
+                          <p className="mt-1 font-mono text-[11px] text-muted">
+                            {notif.actor ? `@${notif.actor.username} · ` : ""}{timeAgo(notif.createdAt)}
+                          </p>
+                        </>
+                      );
+                      const rowClassName = `flex items-stretch border-b border-border last:border-b-0 ${
+                        notif.read ? "opacity-60" : ""
+                      }`;
+                      const contentClassName = "min-w-0 flex-1 px-4 py-3 text-left text-sm transition-colors hover:bg-background";
+                      const removeButton = (
+                        <button
+                          type="button"
+                          aria-label="Delete notification"
+                          title="Delete notification"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void deleteNotification({ notificationId: notif._id });
+                          }}
+                          className="grid w-11 shrink-0 place-items-center text-muted transition-colors hover:bg-danger-muted hover:text-danger"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      );
+
+                      return (
+                        <div key={notif._id} className={rowClassName}>
+                          {notif.href ? (
+                            <Link
+                              href={notif.href}
+                              onClick={() => {
+                                setNotifOpen(false);
+                                if (!notif.read) void markRead({ notificationId: notif._id });
+                              }}
+                              className={contentClassName}
+                            >
+                              {content}
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!notif.read) void markRead({ notificationId: notif._id });
+                              }}
+                              className={contentClassName}
+                            >
+                              {content}
+                            </button>
+                          )}
+                          {removeButton}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="p-4 text-sm text-muted">No notifications.</div>
                   )}

@@ -377,7 +377,7 @@ async function renderViewingHandle(handle: string | null) {
 
     // Tip button
     els.viewingTipBtn.onclick = () => {
-      void chrome.tabs.create({ url: `${GROVE_ORIGIN}/tip/${encodeURIComponent(p.username)}` });
+      void chrome.tabs.create({ url: `${GROVE_ORIGIN}/tip/${encodeURIComponent(p.username)}?autostart=1` });
     };
 
     currentViewingProfilePath = `/profile/${p.username}`;
